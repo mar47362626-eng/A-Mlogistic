@@ -1,4 +1,11 @@
+window.API_BASE_URL = window.API_BASE_URL || '';
+const apiBaseUrl = window.API_BASE_URL.replace(/\/+$/, '');
+
 window.api = {
+  url(path) {
+    if (/^https?:\/\//i.test(path)) return path;
+    return `${apiBaseUrl}${path}`;
+  },
   setStatus(element, message, state = 'error') {
     element.textContent = message;
     if (!message) {
@@ -12,8 +19,8 @@ window.api = {
     element.setAttribute('aria-live', 'polite');
   },
   async request(url, options = {}) {
-    const response = await fetch(url, {
-      credentials: 'same-origin',
+    const response = await fetch(window.api.url(url), {
+      credentials: 'include',
       ...options,
       headers: {
         ...(options.body ? { 'Content-Type': 'application/json' } : {}),

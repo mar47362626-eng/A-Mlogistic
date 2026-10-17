@@ -157,4 +157,166 @@ function createDatabase(directory = path.join(__dirname, 'data')) {
   };
 }
 
-module.exports = { createDatabase };
+function createSupabaseDatabase({
+  url = process.env.SUPABASE_URL,
+  serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY,
+  fetch: fetchImpl = globalThis.fetch,
+} = {}) {
+  if (!url || !serviceRoleKey) {
+    throw new Error('Production requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
+  }
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(url);
+  } catch {
+    throw new Error('SUPABASE_URL must be a valid HTTP(S) URL.');
+  }
+  if (!['https:', 'http:'].includes(parsedUrl.protocol) || !fetchImpl) {
+    throw new Error('SUPABASE_URL must be a valid HTTP(S) URL and fetch must be available.');
+  }
+
+  const endpoint = new URL('/rest/v1/app_records', parsedUrl);
+  const headers = {
+    apikey: serviceRoleKey,
+    Authorization: `Bearer ${serviceRoleKey}`,
+    'Content-Type': 'application/json',
+  };
+
+  function throwResponseError(body, status) {
+    const error = new Error(body?.message || body?.details || `Supabase request failed with HTTP ${status}.`);
+    error.code = body?.code || (status === 409 ? '23505' : undefined);
+    error.status = status;
+    throw error;
+  }
+
+  async function request({ method = 'GET', query = '', body, prefer = '' } = {}) {
+    let response;
+    try {
+      response = await fetchImpl(`${endpoint}${query}`, {
+        method,
+        headers: {
+          ...headers,
+          ...(prefer ? { Prefer: prefer } : {}),
+        },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      });
+    } catch (cause) {
+      const error = new Error('Could not connect to Supabase PostgreSQL.', { cause });
+      error.code = 'SUPABASE_CONNECTION_ERROR';
+      throw error;
+    }
+    const text = await response.text();
+    let payload = null;
+    if (text) {
+      try {
+        payload = JSON.parse(text);
+      } catch {
+        payload = { message: text };
+      }
+    }
+    if (!response.ok) throwResponseError(payload, response.status);
+    return payload;
+  }
+
+  function decodeRecord(row) {
+    const record = { ...row.data };
+    if (!Object.hasOwn(record, 'id') && row.collection === 'sessions') {
+      record.id = row.record_id;
+    }
+    if (row.collection === 'orders' && typeof record.photo === 'string') {
+      record.photo = Buffer.from(record.photo, 'base64');
+    }
+    return record;
+  }
+
+  function encodeRecord(collection, record) {
+    if (!collections.includes(collection)) throw new Error(`Unknown collection: ${collection}`);
+    const data = { ...record };
+    if (collection === 'orders' && Buffer.isBuffer(data.photo)) {
+      data.photo = data.photo.toString('base64');
+    }
+    const recordId = record.id || (collection === 'sessions' ? record.token_hash : null);
+    if (!recordId) throw new Error(`${collection} records require an id${collection === 'sessions' ? ' or token_hash' : ''}.`);
+    return {
+      collection,
+      record_id: String(recordId),
+      email: record.email == null ? null : String(record.email),
+      reference: record.reference == null ? null : String(record.reference),
+      token_hash: record.token_hash == null ? null : String(record.token_hash),
+      data,
+    };
+  }
+
+  async function getRecords(collection) {
+    const records = [];
+    const pageSize = 500;
+    for (let offset = 0; ; offset += pageSize) {
+      const query = `?collection=eq.${encodeURIComponent(collection)}&select=collection,record_id,email,reference,token_hash,data&limit=${pageSize}&offset=${offset}`;
+      const page = await request({ query });
+      records.push(...page.map(decodeRecord));
+      if (page.length < pageSize) return records;
+    }
+  }
+
+  return {
+    async initialize() {
+      try {
+        await request({ query: '?select=collection&limit=1' });
+      } catch (error) {
+        throw new Error(
+          'Supabase connection/schema check failed. Ensure public.app_records and its required constraints exist, and verify the service-role credentials.',
+          { cause: error },
+        );
+      }
+    },
+    async find(collection, predicate) {
+      return (await getRecords(collection)).find(predicate);
+    },
+    async list(collection, predicate = () => true) {
+      return (await getRecords(collection)).filter(predicate);
+    },
+    async insert(collection, record) {
+      const [saved] = await request({
+        method: 'POST',
+        query: '?select=collection,record_id,email,reference,token_hash,data',
+        body: [encodeRecord(collection, record)],
+        prefer: 'return=representation',
+      });
+      return decodeRecord(saved);
+    },
+    async update(collection, predicate, updateRecord) {
+      const records = await getRecords(collection);
+      const previous = records.find(predicate);
+      if (!previous) return null;
+      const updated = updateRecord(previous);
+      const [saved] = await request({
+        method: 'POST',
+        query: '?on_conflict=collection,record_id&select=collection,record_id,email,reference,token_hash,data',
+        body: [encodeRecord(collection, updated)],
+        prefer: 'resolution=merge-duplicates,return=representation',
+      });
+      return decodeRecord(saved);
+    },
+    async remove(collection, predicate) {
+      const matches = (await getRecords(collection)).filter(predicate);
+      if (!matches.length) return 0;
+      const ids = matches.map(record => encodeURIComponent(String(
+        record.id || (collection === 'sessions' ? record.token_hash : ''),
+      ))).join(',');
+      await request({
+        method: 'DELETE',
+        query: `?collection=eq.${encodeURIComponent(collection)}&record_id=in.(${ids})`,
+        prefer: 'return=minimal',
+      });
+      return matches.length;
+    },
+    async close() {},
+  };
+}
+
+function createConfiguredDatabase() {
+  if (process.env.NODE_ENV === 'production') return createSupabaseDatabase();
+  return createDatabase();
+}
+
+module.exports = { createDatabase, createSupabaseDatabase, createConfiguredDatabase };

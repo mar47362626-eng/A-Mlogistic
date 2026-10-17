@@ -1,6 +1,6 @@
 # A&M Logistics website
 
-The customer site (`index.html`), rider portal (`rider.html`), and admin pages remain separate. Express serves them and provides a shared JSON-backed API so accounts, delivery requests, rider reviews, assignments, and notifications work across browsers and devices.
+The customer site (`index.html`), rider portal (`rider.html`), and admin pages remain separate. Express serves them and provides a shared API so accounts, delivery requests, rider reviews, assignments, and notifications work across browsers and devices.
 
 ## Run locally on Windows
 
@@ -10,7 +10,21 @@ The customer site (`index.html`), rider portal (`rider.html`), and admin pages r
 4. Run `npm.cmd start`.
 5. Open `http://localhost:3000` in a browser. Do not open the HTML files directly or use a static-only preview server; the API must be running.
 
-The server creates and updates `data\users.json`, `data\riders.json`, `data\orders.json`, `data\notifications.json`, and `data\sessions.json`. The first server startup imports existing records from `data\ao-logistics.sqlite` when that database exists; the SQLite file is left in place as a backup. Keep `.env` and the `data` folder private and include them in backups. Customer and rider passwords are hashed on the server, and delivery photos are stored as base64 data in the orders file. Administrators can also create their own account through `admin-register.html` if no seeded admin is configured. Run only one server instance against a data folder at a time.
+In development, the server creates and updates `data\users.json`, `data\riders.json`, `data\orders.json`, `data\notifications.json`, and `data\sessions.json`. The first server startup imports existing records from `data\ao-logistics.sqlite` when that database exists; the SQLite file is left in place as a backup. Customer and rider passwords are hashed on the server, and package photos are stored with their orders.
+
+## Supabase production database
+
+Production uses Supabase PostgreSQL. In Supabase, open **SQL Editor**, paste and run [`supabase-schema.sql`](./supabase-schema.sql), then set these values in the server host's private environment settings:
+
+- `SUPABASE_URL`: the project's URL from Supabase **Project Settings → API**.
+- `SUPABASE_SERVICE_ROLE_KEY`: the project's service-role (secret) key from Supabase **Project Settings → API Keys**. Keep this server-side only; never put it in browser code or commit it.
+- `NODE_ENV=production`.
+- `ALLOWED_ORIGINS=https://mar47362626-eng.github.io` so the Pages frontend is permitted to call the backend.
+- The public Render service URL is configured in `api-client.js` as `window.API_BASE_URL` before publishing the static GitHub Pages frontend; this is public configuration, not a secret.
+
+The server requires valid Supabase credentials in production and does not silently fall back to local JSON files. Local development can continue using JSON storage without Supabase credentials. Existing local JSON/SQLite data is not copied automatically; migrate existing records before switching production traffic if you need to retain them. Do not put `.env` or any service-role key in GitHub.
+
+After creating the Render service, set its build command to `npm ci`, start command to `npm start`, and leave **Root Directory** empty. Configure the server environment variables above in Render's dashboard. Once Render gives you the service URL, update the public `window.API_BASE_URL` value at the top of `api-client.js` to that URL and push the frontend change to GitHub Pages. Use the matching Pages origin in `ALLOWED_ORIGINS`; do not include the repository path. Production auth cookies require HTTPS and cross-site cookies must be allowed by the user's browser.
 
 ## Main workflows
 
@@ -22,4 +36,4 @@ The server creates and updates `data\users.json`, `data\riders.json`, `data\orde
 
 Brevo mail uses its transactional email API. Set `BREVO_API_KEY`, `BREVO_SENDER_EMAIL` (a sender verified in Brevo), and optionally `BREVO_SENDER_NAME` in `.env`; `ADMIN_EMAIL` receives new order notices. To embed package photos inside all order emails, also set `BREVO_SMTP_LOGIN` and `BREVO_SMTP_KEY` using the SMTP credentials from Brevo's SMTP & API settings. Order emails are sent through Brevo's SMTP relay so the image can be attached with a Content-ID and displayed inline; non-order emails continue using the transactional API. `BREVO_SMTP_PORT` accepts 465, 587, or 2525 (default 587); use another supported relay port if the network blocks the selected port. Handoff codes are sent and saved separately from the subsequent status-photo email, so a failure to send a status email does not invalidate a handoff code. The app reports notification failures separately. Never put credentials in browser code or commit a populated `.env` file.
 
-For production, run the server behind HTTPS, set `NODE_ENV=production`, use a strong private admin password, and persist the JSON data directory on durable storage.
+For production, run the server behind HTTPS, set `NODE_ENV=production`, use a strong private admin password, and configure Supabase. Package photo bytes are saved with order records in the database.

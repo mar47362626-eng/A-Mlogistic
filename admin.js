@@ -158,7 +158,8 @@ function renderDetail(order, message = '', messageState = 'success') {
 
   const image = document.createElement('img');
   image.className = 'detail-photo';
-  image.src = `/api/orders/${encodeURIComponent(order.id)}/photo`;
+  image.crossOrigin = 'use-credentials';
+  image.src = api.url(`/api/orders/${encodeURIComponent(order.id)}/photo`);
   image.alt = `Customer photo of ${order.item}`;
   detailPanel.append(image);
 

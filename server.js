@@ -5,7 +5,7 @@ const path = require('node:path');
 const { promisify } = require('node:util');
 const express = require('express');
 const nodemailer = require('nodemailer');
-const { createDatabase } = require('./db');
+const { createConfiguredDatabase } = require('./db');
 
 const scrypt = promisify(crypto.scrypt);
 const sessionCookies = {
@@ -211,13 +211,15 @@ function hashToken(token) {
 }
 
 function sendSession(response, token, role) {
-  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-  response.setHeader('Set-Cookie', `${sessionCookies[role]}=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Strict; Max-Age=${sessionDuration / 1000}${secure}`);
+  const production = process.env.NODE_ENV === 'production';
+  const attributes = production ? '; Secure; SameSite=None' : '; SameSite=Strict';
+  response.setHeader('Set-Cookie', `${sessionCookies[role]}=${encodeURIComponent(token)}; HttpOnly; Path=/; Max-Age=${sessionDuration / 1000}${attributes}`);
 }
 
 function clearSessionCookie(response, name) {
-  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-  response.append('Set-Cookie', `${name}=; HttpOnly; Path=/; SameSite=Strict; Max-Age=0${secure}`);
+  const production = process.env.NODE_ENV === 'production';
+  const attributes = production ? '; Secure; SameSite=None' : '; SameSite=Strict';
+  response.append('Set-Cookie', `${name}=; HttpOnly; Path=/; Max-Age=0${attributes}`);
 }
 
 async function passwordDigest(password, salt = crypto.randomBytes(16)) {
@@ -234,7 +236,7 @@ async function passwordMatches(password, salt, expectedHash) {
 async function createSession(database, response, role, principalId) {
   const token = crypto.randomBytes(32).toString('hex');
   const expiresAt = Date.now() + sessionDuration;
-  database.insert('sessions', {
+  await database.insert('sessions', {
     token_hash: hashToken(token),
     role,
     principal_id: principalId,
@@ -244,7 +246,8 @@ async function createSession(database, response, role, principalId) {
 }
 
 function authenticate(database, role, { allowAnonymous = false } = {}) {
-  return (request, response, next) => {
+  return async (request, response, next) => {
+    try {
     const cookieNames = role
       ? [sessionCookies[role], ...sessionRoles.filter(sessionRole => sessionRole !== role).map(sessionRole => sessionCookies[sessionRole]), legacySessionCookie]
       : [...Object.values(sessionCookies), legacySessionCookie];
@@ -263,10 +266,10 @@ function authenticate(database, role, { allowAnonymous = false } = {}) {
     let expiredSession = false;
     for (const { name, token } of credentials) {
       const tokenHash = hashToken(token);
-      const session = database.find('sessions', record => record.token_hash === tokenHash);
+      const session = await database.find('sessions', record => record.token_hash === tokenHash);
       if (!session || session.expires_at <= Date.now()) {
         if (session) {
-          database.remove('sessions', record => record.token_hash === tokenHash);
+          await database.remove('sessions', record => record.token_hash === tokenHash);
           expiredSession = true;
         }
         clearSessionCookie(response, name);
@@ -294,6 +297,9 @@ function authenticate(database, role, { allowAnonymous = false } = {}) {
     return response.status(401).json({
       error: expiredSession ? 'Your session has expired. Please sign in again.' : 'Please sign in to continue.',
     });
+    } catch (error) {
+      next(error);
+    }
   };
 }
 
@@ -316,11 +322,11 @@ function adminRider(rider) {
   return { ...publicRider(rider), license: rider.license };
 }
 
-function publicOrder(database, order) {
+async function publicOrder(database, order) {
   const rider = order.rider_id
-    ? database.find('riders', record => record.id === order.rider_id)
+    ? await database.find('riders', record => record.id === order.rider_id)
     : null;
-  const user = database.find('users', record => record.id === order.user_id);
+  const user = await database.find('users', record => record.id === order.user_id);
   return {
     id: order.id,
     reference: order.reference,
@@ -349,8 +355,8 @@ function publicOrder(database, order) {
   };
 }
 
-function orderStatusEmailTasks(database, order, status, sendEmail) {
-  const customer = database.find('users', user => user.id === order.user_id);
+async function orderStatusEmailTasks(database, order, status, sendEmail) {
+  const customer = await database.find('users', user => user.id === order.user_id);
   if (!customer?.email) return [];
   const descriptions = {
     Confirmed: {
@@ -437,18 +443,45 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
   const requireAdmin = authenticate(database, 'admin');
   const optionalAdmin = authenticate(database, 'admin', { allowAnonymous: true });
   const requireAdminRole = authenticate(database, null);
-  const adminEmails = () => {
-    const registeredEmails = database.list('users', user => user.role === 'admin').map(admin => admin.email);
+  const adminEmails = async () => {
+    const registeredEmails = (await database.list('users', user => user.role === 'admin')).map(admin => admin.email);
     const configuredEmail = normalizeEmail(process.env.ADMIN_EMAIL);
     return [...new Set([...registeredEmails, configuredEmail].filter(Boolean))];
+  };
+  const allowedOrigins = new Set((process.env.ALLOWED_ORIGINS || '')
+    .split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean)
+    .map(origin => new URL(origin).origin));
+  const isAllowedOrigin = origin => {
+    if (allowedOrigins.has(origin)) return true;
+    if (process.env.NODE_ENV === 'production') return false;
+    try {
+      const parsed = new URL(origin);
+      return ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname)
+        && ['http:', 'https:'].includes(parsed.protocol);
+    } catch {
+      return false;
+    }
   };
 
   app.disable('x-powered-by');
   app.use(express.json({ limit: '8mb', strict: true }));
   app.use((request, response, next) => {
     const origin = request.get('origin');
-    if (origin && new URL(origin).host !== request.get('host')) {
+    if (origin && !isAllowedOrigin(origin)) {
       return response.status(403).json({ error: 'Cross-origin requests are not allowed.' });
+    }
+    if (origin) {
+      response.setHeader('Access-Control-Allow-Origin', origin);
+      response.setHeader('Access-Control-Allow-Credentials', 'true');
+      response.setHeader('Vary', 'Origin');
+      if (request.method === 'OPTIONS') {
+        response.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+        response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        response.setHeader('Access-Control-Max-Age', '600');
+        return response.status(204).end();
+      }
     }
     response.setHeader('X-Content-Type-Options', 'nosniff');
     response.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
@@ -468,13 +501,13 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
       if (typeof password !== 'string' || password.length < 8 || password.length > 128) {
         throw requestError('Password must be between 8 and 128 characters.');
       }
-      if (database.find('users', user => user.email.toLowerCase() === email)) {
+      if (await database.find('users', user => user.email.toLowerCase() === email)) {
         throw requestError('An account with this email already exists. Please log in instead.', 409);
       }
       const credentials = await passwordDigest(password);
       const id = crypto.randomUUID();
       const registeredAt = Date.now();
-      database.insert('users', {
+      await database.insert('users', {
         id, email, name, phone,
         password_salt: credentials.salt,
         password_hash: credentials.hash,
@@ -488,7 +521,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
         ]);
         await sendEmail({ to: email, subject: 'Welcome to A&M Logistics', ...content });
       } catch (error) {
-        database.remove('users', user => user.id === id);
+        await database.remove('users', user => user.id === id);
         throw error;
       }
       await createSession(database, response, 'customer', id);
@@ -501,7 +534,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
   app.post('/api/auth/admin/register', optionalAdmin, async (request, response, next) => {
     try {
       const isAuthenticatedAdmin = request.auth?.role === 'admin';
-      if (database.find('users', user => user.role === 'admin') && !isAuthenticatedAdmin) {
+      if (await database.find('users', user => user.role === 'admin') && !isAuthenticatedAdmin) {
         throw requestError('An existing admin must sign in before another admin account can be registered.', 403);
       }
       const name = textField(request.body, 'name', { max: 120 });
@@ -513,16 +546,16 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
       if (typeof password !== 'string' || password.length < 8 || password.length > 128) {
         throw requestError('Password must be between 8 and 128 characters.');
       }
-      if (database.find('users', user => user.email.toLowerCase() === email)) {
+      if (await database.find('users', user => user.email.toLowerCase() === email)) {
         throw requestError('An admin with this email already exists. Please log in instead.', 409);
       }
       const credentials = await passwordDigest(password);
-      if (!isAuthenticatedAdmin && database.find('users', user => user.role === 'admin')) {
+      if (!isAuthenticatedAdmin && await database.find('users', user => user.role === 'admin')) {
         throw requestError('An admin account was registered while this request was in progress. Please sign in.', 403);
       }
       const id = crypto.randomUUID();
       const registeredAt = Date.now();
-      database.insert('users', {
+      await database.insert('users', {
         id,
         email,
         name,
@@ -538,7 +571,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
         ]);
         await sendEmail({ to: email, subject: 'Your A&M administrator account is ready', ...content });
       } catch (error) {
-        database.remove('users', user => user.id === id);
+        await database.remove('users', user => user.id === id);
         throw error;
       }
       await createSession(database, response, 'admin', id);
@@ -552,7 +585,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
     try {
       const email = normalizeEmail(request.body.email);
       const password = request.body.password;
-      const account = database.find('users', user => user.email.toLowerCase() === email && user.role === 'customer');
+      const account = await database.find('users', user => user.email.toLowerCase() === email && user.role === 'customer');
       if (!account || typeof password !== 'string' || password.length < 8 || password.length > 128
         || !(await passwordMatches(password, account.password_salt, account.password_hash))) {
         throw requestError('We could not find an account with those details. Check them or create an account.', 401);
@@ -568,7 +601,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
     try {
       const email = normalizeEmail(request.body.email);
       const password = request.body.password;
-      const account = database.find('users', user => user.email.toLowerCase() === email && user.role === 'admin');
+      const account = await database.find('users', user => user.email.toLowerCase() === email && user.role === 'admin');
       if (!account || typeof password !== 'string' || password.length < 8 || password.length > 128
         || !(await passwordMatches(password, account.password_salt, account.password_hash))) {
         throw requestError('Admin email or password is incorrect.', 401);
@@ -580,33 +613,33 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
     }
   });
 
-  app.get('/api/auth/me', optionalCustomer, (request, response) => {
+  app.get('/api/auth/me', optionalCustomer, async (request, response) => {
     if (!request.auth) return response.json({ user: null });
-    const account = database.find('users', user => user.id === request.auth.principalId);
+    const account = await database.find('users', user => user.id === request.auth.principalId);
     if (!account) return response.json({ user: null });
     response.json({ user: { id: account.id, email: account.email, name: account.name, phone: account.phone, registeredAt: account.registered_at } });
   });
 
-  app.get('/api/auth/admin/me', requireAdmin, (request, response) => {
-    const admin = database.find('users', user => user.id === request.auth.principalId);
+  app.get('/api/auth/admin/me', requireAdmin, async (request, response) => {
+    const admin = await database.find('users', user => user.id === request.auth.principalId);
     if (!admin) return response.status(401).json({ error: 'Admin account not found.' });
     response.json({ user: admin });
   });
 
-  app.post('/api/auth/logout', (request, response) => {
+  app.post('/api/auth/logout', async (request, response) => {
     const role = request.body?.role;
     if (role && !sessionRoles.includes(role)) throw requestError('Choose a valid account type to sign out.', 400);
     const cookieNames = role ? [sessionCookies[role], legacySessionCookie] : Object.values(sessionCookies).concat(legacySessionCookie);
-    cookieNames.forEach(name => {
+    for (const name of cookieNames) {
       const token = cookieValue(request, name);
-      if (!token) return;
+      if (!token) continue;
       const tokenHash = hashToken(token);
-      const session = database.find('sessions', record => record.token_hash === tokenHash);
+      const session = await database.find('sessions', record => record.token_hash === tokenHash);
       if (!role || !session || session.role === role) {
-        database.remove('sessions', record => record.token_hash === tokenHash);
+        await database.remove('sessions', record => record.token_hash === tokenHash);
         clearSessionCookie(response, name);
       }
-    });
+    }
     response.status(204).end();
   });
 
@@ -624,14 +657,14 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
       if (typeof password !== 'string' || password.length < 8 || password.length > 128) {
         throw requestError('Password must be between 8 and 128 characters.');
       }
-      if (database.find('riders', rider => rider.email.toLowerCase() === email)) {
+      if (await database.find('riders', rider => rider.email.toLowerCase() === email)) {
         throw requestError('A rider application already exists for this email. Log in to check its status.', 409);
       }
       const credentials = await passwordDigest(password);
       const id = crypto.randomUUID();
       const reference = `R-${Date.now().toString(36).toUpperCase()}`;
       const registeredAt = Date.now();
-      database.insert('riders', {
+      await database.insert('riders', {
         id, email, name, phone, vehicle, license, area,
         password_salt: credentials.salt,
         password_hash: credentials.hash,
@@ -647,11 +680,11 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
         ]);
         await sendEmail({ to: email, subject: 'Rider application received', ...content });
       } catch (error) {
-        database.remove('riders', rider => rider.id === id);
+        await database.remove('riders', rider => rider.id === id);
         throw error;
       }
       await createSession(database, response, 'rider', id);
-      response.status(201).json({ rider: publicRider(database.find('riders', rider => rider.id === id)) });
+      response.status(201).json({ rider: publicRider(await database.find('riders', rider => rider.id === id)) });
     } catch (error) {
       next(error);
     }
@@ -661,7 +694,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
     try {
       const email = normalizeEmail(request.body.email);
       const password = request.body.password;
-      const rider = database.find('riders', record => record.email.toLowerCase() === email);
+      const rider = await database.find('riders', record => record.email.toLowerCase() === email);
       if (!rider || typeof password !== 'string' || password.length < 8 || password.length > 128
         || !(await passwordMatches(password, rider.password_salt, rider.password_hash))) {
         throw requestError('We could not find a rider application with those details.', 401);
@@ -673,35 +706,36 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
     }
   });
 
-  app.get('/api/rider/me', optionalRider, (request, response) => {
+  app.get('/api/rider/me', optionalRider, async (request, response) => {
     if (!request.auth) return response.json({ rider: null });
-    const rider = database.find('riders', record => record.id === request.auth.principalId);
+    const rider = await database.find('riders', record => record.id === request.auth.principalId);
     if (!rider) return response.status(401).json({ error: 'Rider application not found.' });
     response.json({ rider: publicRider(rider) });
   });
 
-  app.get('/api/rider/deliveries', requireRider, (request, response) => {
-    const rider = database.find('riders', record => record.id === request.auth.principalId);
+  app.get('/api/rider/deliveries', requireRider, async (request, response) => {
+    const rider = await database.find('riders', record => record.id === request.auth.principalId);
     if (!rider || rider.status !== 'Approved') throw requestError('Your rider account is not approved.', 403);
-    const orders = database.list('orders', order => order.rider_id === request.auth.principalId)
+    const orders = (await database.list('orders', order => order.rider_id === request.auth.principalId))
       .sort((first, second) => second.created_at - first.created_at)
       .map(order => publicOrder(database, order));
-    response.json({ orders });
+    const publicOrders = await Promise.all(orders);
+    response.json({ orders: publicOrders });
   });
 
-  app.get('/api/rider/notifications', requireRider, (request, response) => {
-    const email = database.find('riders', rider => rider.id === request.auth.principalId)?.email || '';
-    const messages = database.list('notifications', notification => notification.recipients?.includes(email.toLowerCase()))
+  app.get('/api/rider/notifications', requireRider, async (request, response) => {
+    const email = (await database.find('riders', rider => rider.id === request.auth.principalId))?.email || '';
+    const messages = (await database.list('notifications', notification => notification.recipients?.includes(email.toLowerCase())))
       .sort((first, second) => second.created_at - first.created_at)
       .map(({ recipients, ...notification }) => notification);
     response.json({ notifications: messages });
   });
 
-  app.get('/api/customer/orders', requireCustomer, (request, response) => {
-    const orders = database.list('orders', order => order.user_id === request.auth.principalId)
+  app.get('/api/customer/orders', requireCustomer, async (request, response) => {
+    const orders = (await database.list('orders', order => order.user_id === request.auth.principalId))
       .sort((first, second) => second.created_at - first.created_at)
       .map(order => publicOrder(database, order));
-    response.json({ orders });
+    response.json({ orders: await Promise.all(orders) });
   });
 
   app.post('/api/customer/orders', requireCustomer, async (request, response, next) => {
@@ -730,7 +764,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
       const id = crypto.randomUUID();
       const reference = `AO-${new Date().toISOString().slice(2, 10).replaceAll('-', '')}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
       const createdAt = Date.now();
-      const order = database.insert('orders', {
+      const order = await database.insert('orders', {
         id,
         reference,
         user_id: request.auth.principalId,
@@ -760,8 +794,8 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
         delivery_code_expires_at: null,
         delivery_code_attempts: 0,
       });
-      const customer = database.find('users', user => user.id === request.auth.principalId);
-      const adminRecipients = adminEmails();
+      const customer = await database.find('users', user => user.id === request.auth.principalId);
+      const adminRecipients = await adminEmails();
       const details = [
         `Delivery request ${reference} was received.`,
         `Customer: ${customer?.name || customer?.email || 'Customer'} (${customer?.email || ''})`,
@@ -786,7 +820,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
         })),
       ], 'New delivery request');
       response.status(201).json({
-        order: publicOrder(database, order),
+        order: await publicOrder(database, order),
         ...(notificationWarning ? { warning: 'Your request was saved, but one or more order emails could not be sent.' } : {}),
       });
     } catch (error) {
@@ -794,16 +828,16 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
     }
   });
 
-  app.get('/api/customer/notifications', requireCustomer, (request, response) => {
-    const email = database.find('users', user => user.id === request.auth.principalId)?.email || '';
-    const notifications = database.list('notifications', notification => notification.recipients?.includes(email.toLowerCase()))
+  app.get('/api/customer/notifications', requireCustomer, async (request, response) => {
+    const email = (await database.find('users', user => user.id === request.auth.principalId))?.email || '';
+    const notifications = (await database.list('notifications', notification => notification.recipients?.includes(email.toLowerCase())))
       .sort((first, second) => second.created_at - first.created_at)
       .map(({ recipients, ...notification }) => notification);
     response.json({ notifications });
   });
 
-  app.get('/api/orders/:id/photo', requireAdminRole, (request, response) => {
-    const order = database.find('orders', record => record.id === request.params.id);
+  app.get('/api/orders/:id/photo', requireAdminRole, async (request, response) => {
+    const order = await database.find('orders', record => record.id === request.params.id);
     if (!order) return response.status(404).json({ error: 'Order not found.' });
     const isOwner = request.auth.role === 'customer' && order.user_id === request.auth.principalId;
     const isAssignedRider = request.auth.role === 'rider' && order.rider_id === request.auth.principalId;
@@ -815,30 +849,32 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
     response.send(order.photo);
   });
 
-  app.get('/api/admin/orders', requireAdmin, (request, response) => {
-    const orders = database.list('orders')
+  app.get('/api/admin/orders', requireAdmin, async (request, response) => {
+    const orders = (await database.list('orders'))
       .sort((first, second) => second.created_at - first.created_at)
       .map(order => publicOrder(database, order));
-    response.json({ orders });
+    response.json({ orders: await Promise.all(orders) });
   });
 
-  app.get('/api/admin/users', requireAdmin, (request, response) => {
-    const users = database.list('users', user => user.role === 'customer')
+  app.get('/api/admin/users', requireAdmin, async (request, response) => {
+    const users = (await database.list('users', user => user.role === 'customer'))
       .sort((first, second) => second.registered_at - first.registered_at)
       .map(({ id, email, name, phone, registered_at }) => ({ id, email, name, phone, registeredAt: registered_at }));
     response.json({ users });
   });
 
-  app.get('/api/admin/riders', requireAdmin, (request, response) => {
-    const riders = database.list('riders')
+  app.get('/api/admin/riders', requireAdmin, async (request, response) => {
+    const riders = (await database.list('riders'))
       .sort((first, second) => second.registered_at - first.registered_at)
       .map(adminRider);
     response.json({ riders });
   });
 
-  app.get('/api/admin/registrations', requireAdmin, (request, response) => {
+  app.get('/api/admin/registrations', requireAdmin, async (request, response) => {
+    const users = await database.list('users', user => user.role === 'customer');
+    const riders = await database.list('riders');
     const registrations = [
-      ...database.list('users', user => user.role === 'customer').map(user => ({
+      ...users.map(user => ({
         id: user.id,
         name: user.name,
         email: user.email,
@@ -850,7 +886,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
         license: null,
         registeredAt: user.registered_at,
       })),
-      ...database.list('riders').map(rider => ({
+      ...riders.map(rider => ({
         id: rider.id,
         name: rider.name,
         email: rider.email,
@@ -870,10 +906,10 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
     try {
       const status = request.body.status;
       if (!riderStatuses.includes(status)) throw requestError('Choose Approved or Declined.');
-      const existingRider = database.find('riders', record => record.id === request.params.id);
+      const existingRider = await database.find('riders', record => record.id === request.params.id);
       if (!existingRider) throw requestError('Rider application not found.', 404);
       const reviewedAt = Date.now();
-      const rider = database.update('riders', record => record.id === request.params.id, record => ({
+      const rider = await database.update('riders', record => record.id === request.params.id, record => ({
         ...record,
         status,
         reviewed_at: reviewedAt,
@@ -886,7 +922,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
         try {
           await sendEmail({ to: rider.email, subject: 'Your rider application is approved', ...content });
         } catch (error) {
-          database.update('riders', record => record.id === rider.id, record => ({
+          await database.update('riders', record => record.id === rider.id, record => ({
             ...record,
             status: existingRider.status,
             reviewed_at: existingRider.reviewed_at,
@@ -902,7 +938,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
 
   app.patch('/api/admin/orders/:id', requireAdmin, async (request, response, next) => {
     try {
-      const order = database.find('orders', record => record.id === request.params.id);
+      const order = await database.find('orders', record => record.id === request.params.id);
       if (!order) throw requestError('Order not found.', 404);
       const status = request.body.status;
       if (!orderStatuses.includes(status)) throw requestError('Choose a valid delivery status.');
@@ -910,7 +946,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
       if (Object.hasOwn(request.body, 'riderId')) {
         riderId = request.body.riderId || null;
         if (riderId) {
-          const rider = database.find('riders', record => record.id === riderId && record.status === 'Approved');
+          const rider = await database.find('riders', record => record.id === riderId && record.status === 'Approved');
           if (!rider) throw requestError('Choose an approved rider.');
         }
       }
@@ -929,7 +965,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
       const updatedAt = Date.now();
       const deliveredAt = status === 'Delivered' ? order.delivered_at || updatedAt : null;
       const statusChanged = status !== order.status;
-      const updatedOrder = database.update('orders', record => record.id === request.params.id, record => ({
+      const updatedOrder = await database.update('orders', record => record.id === request.params.id, record => ({
         ...record,
         status,
         rider_id: riderId,
@@ -939,9 +975,9 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
       const assignmentConfirmed = status === 'Confirmed'
         && riderId
         && (order.status !== 'Confirmed' || riderId !== order.rider_id);
-      const emailTasks = statusChanged ? orderStatusEmailTasks(database, updatedOrder, status, sendEmail) : [];
+      const emailTasks = statusChanged ? await orderStatusEmailTasks(database, updatedOrder, status, sendEmail) : [];
       if (assignmentConfirmed) {
-        const rider = database.find('riders', record => record.id === riderId);
+        const rider = await database.find('riders', record => record.id === riderId);
         const content = orderEmailContent(order, 'A delivery has been assigned to you', [
           `Hello ${rider.name}, delivery ${order.reference} has been confirmed and assigned to you.`,
           `Pickup: ${order.pickup}`,
@@ -957,7 +993,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
       }
       const notificationWarning = await sendNotifications(emailTasks, 'Order status');
       response.json({
-        order: publicOrder(database, updatedOrder),
+        order: await publicOrder(database, updatedOrder),
         ...(notificationWarning ? { warning: 'The order was saved, but one or more email notifications could not be sent.' } : {}),
       });
     } catch (error) {
@@ -967,9 +1003,9 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
 
   app.post('/api/rider/orders/:id/handoff-code', requireRider, async (request, response, next) => {
     try {
-      const rider = database.find('riders', record => record.id === request.auth.principalId);
+      const rider = await database.find('riders', record => record.id === request.auth.principalId);
       if (!rider || rider.status !== 'Approved') throw requestError('Your rider account is not approved.', 403);
-      const order = database.find('orders', record => record.id === request.params.id && record.rider_id === rider.id);
+      const order = await database.find('orders', record => record.id === request.params.id && record.rider_id === rider.id);
       if (!order) throw requestError('Assigned delivery not found.', 404);
       const phase = request.body.phase;
       if (phase !== 'pickup' && phase !== 'delivery') throw requestError('Choose pickup or delivery verification.');
@@ -998,7 +1034,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
       });
       const statusChanged = !isPickup && order.status !== 'In transit';
       const issuedAt = Date.now();
-      database.update('orders', record => record.id === order.id, record => ({
+      await database.update('orders', record => record.id === order.id, record => ({
         ...record,
         ...(isPickup ? {
           pickup_code_hash: codeDigest(code),
@@ -1012,7 +1048,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
         ...(isPickup ? {} : { status: 'In transit', updated_at: issuedAt }),
       }));
       const notificationWarning = statusChanged
-        && await sendNotifications(orderStatusEmailTasks(database, order, 'In transit', sendEmail), 'In-transit status');
+        && await sendNotifications(await orderStatusEmailTasks(database, order, 'In transit', sendEmail), 'In-transit status');
       response.json({
         message: `A verification code was emailed to the ${stageLabel} contact.`,
         ...(notificationWarning ? { warning: 'The code was sent and saved, but the package status email could not be sent.' } : {}),
@@ -1024,9 +1060,9 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
 
   app.post('/api/rider/orders/:id/verify-code', requireRider, async (request, response, next) => {
     try {
-      const rider = database.find('riders', record => record.id === request.auth.principalId);
+      const rider = await database.find('riders', record => record.id === request.auth.principalId);
       if (!rider || rider.status !== 'Approved') throw requestError('Your rider account is not approved.', 403);
-      const order = database.find('orders', record => record.id === request.params.id && record.rider_id === rider.id);
+      const order = await database.find('orders', record => record.id === request.params.id && record.rider_id === rider.id);
       if (!order) throw requestError('Assigned delivery not found.', 404);
       const phase = request.body.phase;
       if (phase !== 'pickup' && phase !== 'delivery') throw requestError('Choose pickup or delivery verification.');
@@ -1050,7 +1086,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
       }
       const code = typeof request.body.code === 'string' ? request.body.code.trim() : '';
       if (!/^\d{6}$/.test(code) || !secureDigestMatches(codeDigest(code), order[hashField])) {
-        database.update('orders', record => record.id === order.id, record => ({
+        await database.update('orders', record => record.id === order.id, record => ({
           ...record,
           [attemptsField]: (record[attemptsField] || 0) + 1,
         }));
@@ -1058,7 +1094,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
       }
       const verifiedAt = Date.now();
       const newStatus = isPickup ? 'Collected' : 'Delivered';
-      const updatedOrder = database.update('orders', record => record.id === order.id, record => ({
+      const updatedOrder = await database.update('orders', record => record.id === order.id, record => ({
         ...record,
         status: newStatus,
         updated_at: verifiedAt,
@@ -1069,11 +1105,11 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
         [attemptsField]: 0,
       }));
       const notificationWarning = await sendNotifications(
-        orderStatusEmailTasks(database, updatedOrder, newStatus, sendEmail),
+        await orderStatusEmailTasks(database, updatedOrder, newStatus, sendEmail),
         'Verified handoff status',
       );
       response.json({
-        order: publicOrder(database, updatedOrder),
+        order: await publicOrder(database, updatedOrder),
         ...(notificationWarning ? { warning: 'Code accepted and delivery status updated, but the status email could not be sent.' } : {}),
       });
     } catch (error) {
@@ -1081,27 +1117,31 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
     }
   });
 
-  app.get('/api/admin/notifications', requireAdmin, (request, response) => {
-    const notifications = database.list('notifications')
+  app.get('/api/admin/notifications', requireAdmin, async (request, response) => {
+    const notifications = (await database.list('notifications'))
       .sort((first, second) => second.created_at - first.created_at)
       .map(({ recipients, ...notification }) => notification);
     response.json({ notifications });
   });
 
-  app.post('/api/admin/notifications', requireAdmin, (request, response, next) => {
+  app.post('/api/admin/notifications', requireAdmin, async (request, response, next) => {
     try {
       const subject = textField(request.body, 'subject', { max: 100 });
       const message = textField(request.body, 'message', { max: 1200 });
       const audience = request.body.audience;
       if (!['everyone', 'customers', 'riders'].includes(audience)) throw requestError('Choose a valid notification audience.');
 
+      const customers = audience === 'riders'
+        ? []
+        : await database.list('users', user => user.role === 'customer');
+      const riders = audience === 'customers' ? [] : await database.list('riders');
       const recipients = audience === 'customers'
-        ? database.list('users', user => user.role === 'customer').map(user => user.email)
+        ? customers.map(user => user.email)
         : audience === 'riders'
-          ? database.list('riders').map(rider => rider.email)
+          ? riders.map(rider => rider.email)
           : [
-            ...database.list('users', user => user.role === 'customer'),
-            ...database.list('riders'),
+            ...customers,
+            ...riders,
           ].map(account => account.email);
       const uniqueRecipients = [...new Set(recipients.map(normalizeEmail))];
       if (!uniqueRecipients.length) throw requestError('There are no registered recipients for this audience yet.', 409);
@@ -1109,7 +1149,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
       const labels = { everyone: 'Everyone', customers: 'Users', riders: 'Riders' };
       const id = crypto.randomUUID();
       const createdAt = Date.now();
-      database.insert('notifications', {
+      await database.insert('notifications', {
         id,
         subject,
         message,
@@ -1144,7 +1184,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
     if (error instanceof SyntaxError && 'body' in error) {
       return response.status(400).json({ error: 'Request body must contain valid JSON.' });
     }
-    if (error.code === 'JSON_CONSTRAINT_UNIQUE') {
+    if (error.code === 'JSON_CONSTRAINT_UNIQUE' || error.code === '23505' || error.status === 409) {
       return response.status(409).json({ error: 'An account or application already exists for this email.' });
     }
     if (error.status) return response.status(error.status).json({ error: error.message });
@@ -1161,14 +1201,14 @@ async function seedAdmin(database) {
   const hasConfiguredAdmin = Boolean(email || password);
   if (!hasConfiguredAdmin) return;
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-    throw new Error('Set a valid ADMIN_EMAIL in your .env file before starting the server.');
+    throw new Error('Set a valid ADMIN_EMAIL environment variable before starting the server.');
   }
   if (typeof password !== 'string' || password.length < 12 || password.length > 128) {
-    throw new Error('Set an ADMIN_PASSWORD of 12 to 128 characters in your .env file before starting the server.');
+    throw new Error('Set an ADMIN_PASSWORD of 12 to 128 characters before starting the server.');
   }
   const credentials = await passwordDigest(password);
   const id = crypto.randomUUID();
-  const admin = database.find('users', user => user.email.toLowerCase() === email && user.role === 'admin');
+  const admin = await database.find('users', user => user.email.toLowerCase() === email && user.role === 'admin');
   const record = {
     id: admin?.id || id,
     email,
@@ -1180,16 +1220,17 @@ async function seedAdmin(database) {
     registered_at: admin?.registered_at || Date.now(),
   };
   if (admin) {
-    database.update('users', user => user.id === admin.id, () => record);
+    await database.update('users', user => user.id === admin.id, () => record);
   } else {
-    database.insert('users', record);
+    await database.insert('users', record);
   }
 }
 
 async function start() {
   const port = Number(process.env.PORT || 3000);
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('PORT must be a valid TCP port.');
-  const database = createDatabase();
+  const database = createConfiguredDatabase();
+  await database.initialize?.();
   await seedAdmin(database);
   const app = createApp(database);
   app.listen(port, () => console.log(`A&M Logistics is running at http://localhost:${port}`));

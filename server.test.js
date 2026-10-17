@@ -28,6 +28,7 @@ async function request(route, { method = 'GET', body, cookie } = {}) {
 before(async () => {
   process.env.ADMIN_EMAIL = 'admin@example.com';
   process.env.ADMIN_PASSWORD = 'test-admin-password-123';
+  process.env.ALLOWED_ORIGINS = 'https://mar47362626-eng.github.io';
   emails = [];
   failDeliveredEmail = false;
   failInTransitEmail = false;
@@ -76,6 +77,26 @@ test('separate site pages are served and protected APIs enforce roles', async ()
   assert.equal(riderSession.result.rider, null);
   assert.equal(databaseFile.status, 404);
   assert.equal(jsonDatabaseFile.status, 404);
+});
+
+test('GitHub Pages origin is allowed for credentialed API calls and untrusted origins are rejected', async () => {
+  const allowedOrigin = 'https://mar47362626-eng.github.io';
+  const preflight = await fetch(`${baseUrl}/api/auth/me`, {
+    method: 'OPTIONS',
+    headers: {
+      Origin: allowedOrigin,
+      'Access-Control-Request-Method': 'POST',
+      'Access-Control-Request-Headers': 'content-type',
+    },
+  });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get('access-control-allow-origin'), allowedOrigin);
+  assert.equal(preflight.headers.get('access-control-allow-credentials'), 'true');
+
+  const blocked = await fetch(`${baseUrl}/api/auth/me`, {
+    headers: { Origin: 'https://untrusted.example' },
+  });
+  assert.equal(blocked.status, 403);
 });
 
 test('admin accounts can be created through the registration endpoint', async () => {

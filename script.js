@@ -110,7 +110,8 @@ async function renderOrders() {
     const card = document.createElement('article');
     card.className = 'order-card';
     const image = document.createElement('img');
-    image.src = `/api/orders/${encodeURIComponent(order.id)}/photo`;
+    image.crossOrigin = 'use-credentials';
+    image.src = api.url(`/api/orders/${encodeURIComponent(order.id)}/photo`);
     image.alt = `Photo of ${order.item}`;
     const info = document.createElement('div');
     const title = document.createElement('h4');
