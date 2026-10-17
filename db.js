@@ -263,8 +263,10 @@ function createSupabaseDatabase({
       try {
         await request({ query: '?select=collection&limit=1' });
       } catch (error) {
+        const status = error?.status ? ` (HTTP ${error.status})` : '';
+        const detail = `${error?.message || 'Unknown Supabase error.'}${status}`;
         throw new Error(
-          'Supabase connection/schema check failed. Ensure public.app_records and its required constraints exist, and verify the service-role credentials.',
+          `Supabase connection/schema check failed: ${detail} Ensure public.app_records and its required constraints exist, and verify the service-role credentials.`,
           { cause: error },
         );
       }

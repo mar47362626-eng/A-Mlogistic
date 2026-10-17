@@ -75,6 +75,26 @@ test('JSON collections persist across restarts and retain order photos', () => {
       assert.throws(() => createSupabaseDatabase({ url: '', serviceRoleKey: '' }), /SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY/);
     });
 
+    test('Supabase initialization reports the database response without exposing credentials', async () => {
+      const database = createSupabaseDatabase({
+        url: 'https://example.supabase.co',
+        serviceRoleKey: 'never-log-this-key',
+        fetch: async () => new Response(JSON.stringify({
+          code: '42P01',
+          message: 'relation "public.app_records" does not exist',
+        }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      });
+      await assert.rejects(database.initialize(), error => {
+        assert.match(error.message, /relation "public\.app_records" does not exist/);
+        assert.match(error.message, /HTTP 404/);
+        assert.doesNotMatch(error.message, /never-log-this-key/);
+        return true;
+      });
+    });
+
     test('Render never falls back to local JSON when Supabase credentials are missing', () => {
       const previous = {
         nodeEnv: process.env.NODE_ENV,
