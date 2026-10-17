@@ -295,6 +295,9 @@ riderForm.addEventListener('submit', async event => {
     });
     riderForm.reset();
     await showRider(result.rider);
+    if (result.warning) {
+      api.setStatus(document.querySelector('#rider-application-warning'), result.warning, 'info');
+    }
   } catch (error) {
     api.setStatus(status, error.message);
   } finally {

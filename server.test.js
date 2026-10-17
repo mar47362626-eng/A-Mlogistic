@@ -10,6 +10,7 @@ let emails;
 let failDeliveredEmail;
 let failInTransitEmail;
 let failNewOrderEmail;
+let failRiderApplicationEmail;
 
 async function request(route, { method = 'GET', body, cookie } = {}) {
   const response = await fetch(`${baseUrl}${route}`, {
@@ -33,6 +34,7 @@ before(async () => {
   failDeliveredEmail = false;
   failInTransitEmail = false;
   failNewOrderEmail = false;
+  failRiderApplicationEmail = false;
   database = createDatabase(':memory:');
   await seedAdmin(database);
   server = createApp(database, {
@@ -43,6 +45,9 @@ before(async () => {
       }
       if (failNewOrderEmail && /delivery request|new delivery request/i.test(email.subject)) {
         throw new Error('Simulated new-order email outage.');
+      }
+      if (failRiderApplicationEmail && /rider application received/i.test(email.subject)) {
+        throw new Error('Simulated rider application email outage.');
       }
       emails.push(email);
     },
@@ -210,6 +215,29 @@ test('customer and rider workflows share orders, assignment, and notifications',
   assert.equal(registeredRider.result.rider.status, 'Pending review');
   assert.equal('password_hash' in registeredRider.result.rider, false);
 
+  failRiderApplicationEmail = true;
+  const savedRiderApplication = await request('/api/rider/applications', {
+    method: 'POST',
+    body: {
+      name: 'Jordan Rider',
+      phone: '555-0101',
+      email: 'jordan.rider@example.com',
+      vehicle: 'Bicycle',
+      license: 'RIDER-002',
+      area: 'Central',
+      password: 'jordan-rider-password-123',
+    },
+  });
+  failRiderApplicationEmail = false;
+  assert.equal(savedRiderApplication.response.status, 201);
+  assert.equal(savedRiderApplication.result.rider.status, 'Pending review');
+  assert.match(savedRiderApplication.result.warning, /application was saved/i);
+  const riderLoginAfterEmailFailure = await request('/api/rider/login', {
+    method: 'POST',
+    body: { email: 'jordan.rider@example.com', password: 'jordan-rider-password-123' },
+  });
+  assert.equal(riderLoginAfterEmailFailure.response.status, 200);
+
   const adminLogin = await request('/api/auth/admin/login', {
     method: 'POST',
     body: { email: 'admin@example.com', password: 'test-admin-password-123' },
@@ -225,9 +253,9 @@ test('customer and rider workflows share orders, assignment, and notifications',
   const riderRegistrations = await request('/api/admin/registrations', { cookie: adminCookie });
   assert.equal(riderRegistrations.response.status, 200);
   assert.equal(riderRegistrations.result.registrations[0].type, 'Rider');
-  assert.equal(riderRegistrations.result.registrations[0].license, 'RIDER-001');
+  assert.ok(riderRegistrations.result.registrations.some(registration => registration.license === 'RIDER-001'));
   const riderAdminList = await request('/api/admin/riders', { cookie: adminCookie });
-  assert.equal(riderAdminList.result.riders[0].license, 'RIDER-001');
+  assert.ok(riderAdminList.result.riders.some(rider => rider.license === 'RIDER-001'));
 
   const review = await request(`/api/admin/riders/${registeredRider.result.rider.id}/status`, {
     method: 'PATCH',
@@ -274,7 +302,7 @@ test('customer and rider workflows share orders, assignment, and notifications',
   const customerRegistration = await request('/api/admin/registrations', { cookie: adminCookie });
   assert.deepEqual(
     customerRegistration.result.registrations.map(registration => registration.type).sort(),
-    ['Customer', 'Rider'],
+    ['Customer', 'Rider', 'Rider'],
   );
 
   const order = await request('/api/customer/orders', {

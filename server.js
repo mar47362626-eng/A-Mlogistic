@@ -687,6 +687,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
         registered_at: registeredAt,
         reviewed_at: null,
       });
+      let notificationWarning = false;
       try {
         const content = emailContent('Rider application received', [
           `Hello ${name}, we have received your rider application.`,
@@ -694,11 +695,14 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
         ]);
         await sendEmail({ to: email, subject: 'Rider application received', ...content });
       } catch (error) {
-        await database.remove('riders', rider => rider.id === id);
-        throw error;
+        console.error('Rider application email notification failed:', error);
+        notificationWarning = true;
       }
       await createSession(database, response, 'rider', id);
-      response.status(201).json({ rider: publicRider(await database.find('riders', rider => rider.id === id)) });
+      response.status(201).json({
+        rider: publicRider(await database.find('riders', rider => rider.id === id)),
+        ...(notificationWarning ? { warning: 'Your application was saved, but the confirmation email could not be sent.' } : {}),
+      });
     } catch (error) {
       next(error);
     }
