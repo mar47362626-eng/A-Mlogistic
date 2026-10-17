@@ -16,7 +16,7 @@ In development, the server creates and updates `data\users.json`, `data\riders.j
 
 ## Supabase production database
 
-Production uses Supabase PostgreSQL. In Supabase, open **SQL Editor**, paste and run [`supabase-schema.sql`](./supabase-schema.sql), then set these values in the server host's private environment settings:
+Production, including the app running on Render, uses Supabase PostgreSQL. The app will not silently fall back to local JSON files on Render, even if `NODE_ENV` is missing. In Supabase, open **SQL Editor**, paste and run [`supabase-schema.sql`](./supabase-schema.sql), then set these values in the server host's private environment settings:
 
 - `SUPABASE_URL`: the project's URL from Supabase **Project Settings → API**.
 - `SUPABASE_SERVICE_ROLE_KEY`: the project's service-role (secret) key from Supabase **Project Settings → API Keys**. Keep this server-side only; never put it in browser code or commit it.

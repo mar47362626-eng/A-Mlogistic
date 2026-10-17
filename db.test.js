@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { test } = require('node:test');
-const { createDatabase, createSupabaseDatabase } = require('./db');
+const { createConfiguredDatabase, createDatabase, createSupabaseDatabase } = require('./db');
 
 test('JSON collections persist across restarts and retain order photos', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ao-logistics-'));
@@ -73,6 +73,31 @@ test('JSON collections persist across restarts and retain order photos', () => {
 
     test('Supabase adapter requires production credentials', () => {
       assert.throws(() => createSupabaseDatabase({ url: '', serviceRoleKey: '' }), /SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY/);
+    });
+
+    test('Render never falls back to local JSON when Supabase credentials are missing', () => {
+      const previous = {
+        nodeEnv: process.env.NODE_ENV,
+        render: process.env.RENDER,
+        url: process.env.SUPABASE_URL,
+        key: process.env.SUPABASE_SERVICE_ROLE_KEY,
+      };
+      try {
+        process.env.NODE_ENV = 'development';
+        process.env.RENDER = 'true';
+        delete process.env.SUPABASE_URL;
+        delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+        assert.throws(() => createConfiguredDatabase(), /SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY/);
+      } finally {
+        if (previous.nodeEnv === undefined) delete process.env.NODE_ENV;
+        else process.env.NODE_ENV = previous.nodeEnv;
+        if (previous.render === undefined) delete process.env.RENDER;
+        else process.env.RENDER = previous.render;
+        if (previous.url === undefined) delete process.env.SUPABASE_URL;
+        else process.env.SUPABASE_URL = previous.url;
+        if (previous.key === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+        else process.env.SUPABASE_SERVICE_ROLE_KEY = previous.key;
+      }
     });
     database.insert('orders', {
       id: 'order-1',

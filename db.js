@@ -315,7 +315,10 @@ function createSupabaseDatabase({
 }
 
 function createConfiguredDatabase() {
-  if (process.env.NODE_ENV === 'production') return createSupabaseDatabase();
+  const production = process.env.NODE_ENV === 'production';
+  const render = process.env.RENDER === 'true';
+  const hasSupabaseConfig = Boolean(process.env.SUPABASE_URL || process.env.SUPABASE_SERVICE_ROLE_KEY);
+  if (production || render || hasSupabaseConfig) return createSupabaseDatabase();
   return createDatabase();
 }
 
