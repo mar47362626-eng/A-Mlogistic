@@ -116,6 +116,13 @@ test('GitHub Pages origin is allowed for credentialed API calls and untrusted or
   assert.equal(preflight.headers.get('access-control-allow-origin'), allowedOrigin);
   assert.equal(preflight.headers.get('access-control-allow-credentials'), 'true');
 
+  const sameOrigin = await fetch(`${baseUrl}/api/auth/me`, {
+    method: 'OPTIONS',
+    headers: { Origin: baseUrl },
+  });
+  assert.equal(sameOrigin.status, 204);
+  assert.equal(sameOrigin.headers.get('access-control-allow-origin'), baseUrl);
+
   const blocked = await fetch(`${baseUrl}/api/auth/me`, {
     headers: { Origin: 'https://untrusted.example' },
   });

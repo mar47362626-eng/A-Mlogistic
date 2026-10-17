@@ -448,18 +448,22 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
     const configuredEmail = normalizeEmail(process.env.ADMIN_EMAIL);
     return [...new Set([...registeredEmails, configuredEmail].filter(Boolean))];
   };
-  const allowedOrigins = new Set((process.env.ALLOWED_ORIGINS || '')
-    .split(',')
-    .map(origin => origin.trim())
-    .filter(Boolean)
-    .map(origin => new URL(origin).origin));
-  const isAllowedOrigin = origin => {
-    if (allowedOrigins.has(origin)) return true;
-    if (process.env.NODE_ENV === 'production') return false;
+  const allowedOrigins = new Set([
+    'https://mar47362626-eng.github.io',
+    ...(process.env.ALLOWED_ORIGINS || '').split(',').map(origin => origin.trim()).filter(Boolean),
+  ].map(origin => new URL(origin).origin));
+  const isAllowedOrigin = (origin, request) => {
     try {
       const parsed = new URL(origin);
-      return ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname)
-        && ['http:', 'https:'].includes(parsed.protocol);
+      if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+      if (allowedOrigins.has(parsed.origin)) return true;
+
+      const requestHost = request.get('host')?.toLowerCase();
+      const sameHost = requestHost && parsed.host.toLowerCase() === requestHost;
+      if (sameHost && (process.env.NODE_ENV !== 'production' || parsed.protocol === 'https:')) return true;
+
+      return process.env.NODE_ENV !== 'production'
+        && ['localhost', '127.0.0.1', '[::1]'].includes(parsed.hostname);
     } catch {
       return false;
     }
@@ -469,7 +473,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
   app.use(express.json({ limit: '8mb', strict: true }));
   app.use((request, response, next) => {
     const origin = request.get('origin');
-    if (origin && !isAllowedOrigin(origin)) {
+    if (origin && !isAllowedOrigin(origin, request)) {
       return response.status(403).json({ error: 'Cross-origin requests are not allowed.' });
     }
     if (origin) {

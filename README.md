@@ -21,7 +21,7 @@ Production uses Supabase PostgreSQL. In Supabase, open **SQL Editor**, paste and
 - `SUPABASE_URL`: the project's URL from Supabase **Project Settings → API**.
 - `SUPABASE_SERVICE_ROLE_KEY`: the project's service-role (secret) key from Supabase **Project Settings → API Keys**. Keep this server-side only; never put it in browser code or commit it.
 - `NODE_ENV=production`.
-- `ALLOWED_ORIGINS=https://mar47362626-eng.github.io` so the Pages frontend is permitted to call the backend.
+- `ALLOWED_ORIGINS=https://mar47362626-eng.github.io` so the Pages frontend is permitted to call the backend. The deployed Pages origin is also included in the app's defaults; same-host Render requests are allowed automatically.
 - The public Render service URL is configured in `api-client.js` as `window.API_BASE_URL` before publishing the static GitHub Pages frontend; this is public configuration, not a secret.
 
 The server requires valid Supabase credentials in production and does not silently fall back to local JSON files. Local development can continue using JSON storage without Supabase credentials. Existing local JSON/SQLite data is not copied automatically; migrate existing records before switching production traffic if you need to retain them. Do not put `.env` or any service-role key in GitHub.
