@@ -491,6 +491,16 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
 
   app.get('/api/health', (request, response) => response.json({ status: 'ok' }));
 
+  app.get(['/admin/', '/rider/'], (request, response) => {
+    if (request.path.endsWith('/')) {
+      return response.redirect(301, request.path.slice(0, -1));
+    }
+    return response.sendFile(path.join(staticDirectory, request.path === '/admin' ? 'admin.html' : 'rider.html'));
+  });
+  app.get(['/admin.html', '/rider.html'], (request, response) => {
+    response.redirect(301, request.path === '/admin.html' ? '/admin' : '/rider');
+  });
+
   app.post('/api/auth/register', async (request, response, next) => {
     try {
       const name = textField(request.body, 'name', { max: 120 });

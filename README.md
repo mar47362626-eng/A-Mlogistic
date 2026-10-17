@@ -2,6 +2,8 @@
 
 The customer site (`index.html`), rider portal (`rider.html`), and admin pages remain separate. Express serves them and provides a shared API so accounts, delivery requests, rider reviews, assignments, and notifications work across browsers and devices.
 
+The production web app is served from Render at `https://a-mlogistic.onrender.com`. The frontend API client uses that URL; the server also hosts the frontend, so use the Render URL for the public site. Admin and rider pages are available at `/admin` and `/rider`; old `/admin.html` and `/rider.html` links redirect to these clean paths.
+
 ## Run locally on Windows
 
 1. Install Node.js 22.13 or newer.

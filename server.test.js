@@ -57,17 +57,23 @@ after(async () => {
 });
 
 test('separate site pages are served and protected APIs enforce roles', async () => {
-  const [home, riderPage, adminData, databaseFile, jsonDatabaseFile] = await Promise.all([
+  const [home, riderPage, cleanAdminPage, cleanRiderPage, adminData, databaseFile, jsonDatabaseFile] = await Promise.all([
     fetch(`${baseUrl}/index.html`),
     fetch(`${baseUrl}/rider.html`),
+    fetch(`${baseUrl}/admin`),
+    fetch(`${baseUrl}/rider`),
     request('/api/admin/orders'),
     fetch(`${baseUrl}/data/ao-logistics.sqlite`),
     fetch(`${baseUrl}/data/users.json`),
   ]);
   assert.equal(home.status, 200);
   assert.equal(riderPage.status, 200);
+  assert.equal(cleanAdminPage.status, 200);
+  assert.equal(cleanRiderPage.status, 200);
   assert.match(await home.text(), /We move/);
   assert.match(await riderPage.text(), /RIDER APPLICATION/);
+  assert.match(await cleanAdminPage.text(), /A&M Logistics/);
+  assert.match(await cleanRiderPage.text(), /RIDER APPLICATION/);
   assert.equal(adminData.response.status, 401);
   const signedOutCustomer = await request('/api/auth/me');
   assert.equal(signedOutCustomer.response.status, 200);
@@ -77,6 +83,23 @@ test('separate site pages are served and protected APIs enforce roles', async ()
   assert.equal(riderSession.result.rider, null);
   assert.equal(databaseFile.status, 404);
   assert.equal(jsonDatabaseFile.status, 404);
+});
+
+test('clean admin and rider URLs normalize trailing slashes and old file URLs redirect', async () => {
+  const [admin, rider, oldAdmin, oldRider] = await Promise.all([
+    fetch(`${baseUrl}/admin/`, { redirect: 'manual' }),
+    fetch(`${baseUrl}/rider/`, { redirect: 'manual' }),
+    fetch(`${baseUrl}/admin.html`, { redirect: 'manual' }),
+    fetch(`${baseUrl}/rider.html`, { redirect: 'manual' }),
+  ]);
+  assert.equal(admin.status, 301);
+  assert.equal(admin.headers.get('location'), '/admin');
+  assert.equal(rider.status, 301);
+  assert.equal(rider.headers.get('location'), '/rider');
+  assert.equal(oldAdmin.status, 301);
+  assert.equal(oldAdmin.headers.get('location'), '/admin');
+  assert.equal(oldRider.status, 301);
+  assert.equal(oldRider.headers.get('location'), '/rider');
 });
 
 test('GitHub Pages origin is allowed for credentialed API calls and untrusted origins are rejected', async () => {

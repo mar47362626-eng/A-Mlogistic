@@ -2,8 +2,9 @@ const loginForm = document.querySelector('#admin-login-form');
 const loginStatus = document.querySelector('#admin-login-status');
 
 function adminReturnTarget() {
-  const value = (new URLSearchParams(window.location.search).get('returnTo') || 'admin.html').replace(/^\/+/, '');
-  return /^admin(?:-[a-z]+)?\.html$/.test(value) ? value : 'admin.html';
+  const value = (new URLSearchParams(window.location.search).get('returnTo') || '/admin').replace(/^\/+/, '');
+  if (!/^admin(?:-[a-z]+)?(?:\.html)?$/.test(value)) return '/admin';
+  return value === 'admin' || value === 'admin.html' ? '/admin' : `/${value}`;
 }
 
 loginForm.addEventListener('submit', async event => {

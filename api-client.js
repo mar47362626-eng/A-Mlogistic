@@ -1,4 +1,4 @@
-window.API_BASE_URL = window.API_BASE_URL || '';
+window.API_BASE_URL = window.API_BASE_URL || 'https://a-mlogistic.onrender.com';
 const apiBaseUrl = window.API_BASE_URL.replace(/\/+$/, '');
 
 window.api = {

@@ -16,7 +16,7 @@ registerForm.addEventListener('submit', async event => {
         password: values.get('password'),
       }),
     });
-    window.location.replace('admin.html');
+    window.location.replace('/admin');
   } catch (error) {
     api.setStatus(registerStatus, error.message);
   } finally {
