@@ -26,6 +26,8 @@ Production, including the app running on Render, uses Supabase PostgreSQL. The a
 
 The server requires valid Supabase credentials in production and does not silently fall back to local JSON files. Local development can continue using JSON storage without Supabase credentials. Existing local JSON/SQLite data is not copied automatically; migrate existing records before switching production traffic if you need to retain them. Do not put `.env` or any service-role key in GitHub.
 
+If Render reports `permission denied for table app_records`, rerun `supabase-schema.sql` in the matching Supabase project's SQL Editor and confirm that Render's `SUPABASE_SERVICE_ROLE_KEY` is that same project's service-role secret key, not its anon/publishable key. The schema grants table access to `service_role`.
+
 After creating the Render service, set its build command to `npm ci`, start command to `npm start`, and leave **Root Directory** empty. Configure the server environment variables above in Render's dashboard. Once Render gives you the service URL, update the public `window.API_BASE_URL` value at the top of `api-client.js` to that URL and push the frontend change to GitHub Pages. Use the matching Pages origin in `ALLOWED_ORIGINS`; do not include the repository path. Production auth cookies require HTTPS and cross-site cookies must be allowed by the user's browser.
 
 ## Main workflows

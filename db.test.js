@@ -20,6 +20,26 @@ test('JSON collections persist across restarts and retain order photos', () => {
       registered_at: 1,
     });
 
+    test('Supabase initialization includes safe network cause details', async () => {
+      const database = createSupabaseDatabase({
+        url: 'https://example.supabase.co',
+        serviceRoleKey: 'never-log-this-key',
+        fetch: async () => {
+          const cause = Object.assign(new Error('getaddrinfo ENOTFOUND invalid.supabase.co'), {
+            code: 'ENOTFOUND',
+          });
+          throw new TypeError('fetch failed', { cause });
+        },
+      });
+
+      await assert.rejects(database.initialize(), error => {
+        assert.match(error.message, /ENOTFOUND/);
+        assert.match(error.message, /invalid\.supabase\.co/);
+        assert.doesNotMatch(error.message, /never-log-this-key/);
+        return true;
+      });
+    });
+
     test('Supabase adapter preserves records and package photo bytes across CRUD operations', async () => {
       const rows = new Map();
       let authorizationHeader;
@@ -75,6 +95,21 @@ test('JSON collections persist across restarts and retain order photos', () => {
       assert.throws(() => createSupabaseDatabase({ url: '', serviceRoleKey: '' }), /SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY/);
     });
 
+    test('Supabase adapter accepts a project reference entered without its full URL', async () => {
+      let requestedUrl;
+      const database = createSupabaseDatabase({
+        url: 'https:okpwuahjeejmnpileweb',
+        serviceRoleKey: 'test-service-role-key',
+        fetch: async url => {
+          requestedUrl = url;
+          return new Response('[]', { status: 200 });
+        },
+      });
+
+      await database.initialize();
+      assert.equal(requestedUrl, 'https://okpwuahjeejmnpileweb.supabase.co/rest/v1/app_records?select=collection&limit=1');
+    });
+
     test('Supabase initialization reports the database response without exposing credentials', async () => {
       const database = createSupabaseDatabase({
         url: 'https://example.supabase.co',
@@ -90,6 +125,27 @@ test('JSON collections persist across restarts and retain order photos', () => {
       await assert.rejects(database.initialize(), error => {
         assert.match(error.message, /relation "public\.app_records" does not exist/);
         assert.match(error.message, /HTTP 404/);
+        assert.doesNotMatch(error.message, /never-log-this-key/);
+        return true;
+      });
+    });
+
+    test('Supabase initialization gives actionable advice for app_records permission errors', async () => {
+      const database = createSupabaseDatabase({
+        url: 'https://example.supabase.co',
+        serviceRoleKey: 'never-log-this-key',
+        fetch: async () => new Response(JSON.stringify({
+          code: '42501',
+          message: 'permission denied for table app_records',
+        }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      });
+
+      await assert.rejects(database.initialize(), error => {
+        assert.match(error.message, /GRANT ALL ON TABLE public\.app_records TO service_role/);
+        assert.match(error.message, /matching project service-role secret/);
         assert.doesNotMatch(error.message, /never-log-this-key/);
         return true;
       });

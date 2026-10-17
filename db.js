@@ -165,6 +165,10 @@ function createSupabaseDatabase({
   if (!url || !serviceRoleKey) {
     throw new Error('Production requires SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.');
   }
+  const projectReference = /^(?:https:)?([a-z0-9]{20})$/i.exec(url.trim());
+  if (projectReference) {
+    url = `https://${projectReference[1].toLowerCase()}.supabase.co`;
+  }
   let parsedUrl;
   try {
     parsedUrl = new URL(url);
@@ -264,9 +268,15 @@ function createSupabaseDatabase({
         await request({ query: '?select=collection&limit=1' });
       } catch (error) {
         const status = error?.status ? ` (HTTP ${error.status})` : '';
-        const detail = `${error?.message || 'Unknown Supabase error.'}${status}`;
+        let cause = error?.cause;
+        while (cause?.cause && cause.cause !== cause) cause = cause.cause;
+        const causeDetail = [cause?.code, cause?.message].filter(Boolean).join(': ');
+        const detail = `${error?.message || 'Unknown Supabase error.'}${status}${causeDetail ? ` (${causeDetail})` : ''}`;
+        const permissionAdvice = /permission denied for table ["']?app_records/i.test(error?.message || '')
+          ? ' Run GRANT ALL ON TABLE public.app_records TO service_role in Supabase SQL Editor, and verify SUPABASE_SERVICE_ROLE_KEY is the matching project service-role secret (not an anon/publishable key).'
+          : ' Ensure public.app_records and its required constraints exist, and verify the service-role credentials.';
         throw new Error(
-          `Supabase connection/schema check failed: ${detail} Ensure public.app_records and its required constraints exist, and verify the service-role credentials.`,
+          `Supabase connection/schema check failed: ${detail}${permissionAdvice}`,
           { cause: error },
         );
       }
