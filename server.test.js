@@ -95,6 +95,17 @@ test('separate site pages are served and protected APIs enforce roles', async ()
   assert.equal(jsonDatabaseFile.status, 404);
 });
 
+test('favicon requests redirect to the branded SVG icon', async () => {
+  const legacyIcon = await fetch(`${baseUrl}/favicon.ico`, { redirect: 'manual' });
+  assert.equal(legacyIcon.status, 302);
+  assert.equal(legacyIcon.headers.get('location'), '/favicon.svg');
+
+  const icon = await fetch(`${baseUrl}/favicon.svg`);
+  assert.equal(icon.status, 200);
+  assert.match(icon.headers.get('content-type'), /image\/svg\+xml/);
+  assert.match(await icon.text(), /<svg/);
+});
+
 test('clean admin and rider URLs normalize trailing slashes and old file URLs redirect', async () => {
   const [admin, rider, oldAdmin, oldRider] = await Promise.all([
     fetch(`${baseUrl}/admin/`, { redirect: 'manual' }),

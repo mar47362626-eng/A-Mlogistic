@@ -515,6 +515,8 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
 
   app.get('/api/health', (request, response) => response.json({ status: 'ok' }));
 
+  app.get('/favicon.ico', (request, response) => response.redirect(302, '/favicon.svg'));
+
   app.get(['/admin/', '/rider/'], (request, response) => {
     if (request.path.endsWith('/')) {
       return response.redirect(301, request.path.slice(0, -1));
