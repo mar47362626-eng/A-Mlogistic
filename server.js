@@ -4,7 +4,6 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 const { promisify } = require('node:util');
 const express = require('express');
-const nodemailer = require('nodemailer');
 const { createConfiguredDatabase } = require('./db');
 
 const scrypt = promisify(crypto.scrypt);
@@ -50,50 +49,19 @@ async function sendBrevoEmail({ to, subject, text, html, attachment, inlineImage
     throw requestError('Email delivery is not configured. Set a valid BREVO_SENDER_EMAIL.', 503);
   }
   const senderName = process.env.BREVO_SENDER_NAME || 'A&M Logistics';
-  if (inlineImage) {
-    const smtpLogin = process.env.BREVO_SMTP_LOGIN;
-    const smtpKey = process.env.BREVO_SMTP_KEY;
-    if (!smtpLogin || !smtpKey) {
-      throw requestError('Inline package photos require BREVO_SMTP_LOGIN and BREVO_SMTP_KEY.', 503);
-    }
-    const smtpPort = Number(process.env.BREVO_SMTP_PORT || 587);
-    if (![465, 587, 2525].includes(smtpPort)) {
-      throw requestError('BREVO_SMTP_PORT must be 465, 587, or 2525.', 503);
-    }
-
-    const transporter = nodemailer.createTransport({
-      host: 'smtp-relay.brevo.com',
-      port: smtpPort,
-      secure: smtpPort === 465,
-      requireTLS: smtpPort !== 465,
-      auth: { user: smtpLogin, pass: smtpKey },
-    });
-    try {
-      await transporter.sendMail({
-        from: { name: senderName, address: senderEmail },
-        to,
-        subject,
-        text,
-        html,
-        attachments: [{
-          filename: inlineImage.name,
-          content: Buffer.from(inlineImage.content, 'base64'),
-          contentType: inlineImage.contentType,
-          cid: inlineImage.cid,
-        }],
-      });
-    } catch (error) {
-      console.error('Brevo SMTP email request failed:', error);
-      if (error.code === 'EAUTH' || error.responseCode === 535) {
-        throw requestError('Brevo rejected the SMTP credentials. Check the exact SMTP login, active SMTP key, and Brevo authorized-IP settings.', 502);
-      }
-      if (['EDNS', 'ETIMEDOUT', 'ECONNECTION', 'ESOCKET'].includes(error.code)) {
-        throw requestError('The app could not connect to Brevo SMTP. Check DNS/network access and try an allowed port such as 2525.', 502);
-      }
-      throw requestError('Brevo could not send the email with its inline package photo. Please try again.', 502);
-    }
-    return;
-  }
+  const apiHtml = inlineImage
+    ? html.replace(
+      /<img src="cid:[^"]+" alt="Package photo"[^>]*>/,
+      '<p style="color:#4d584f;font-family:Arial,sans-serif;font-size:14px;">The package photo is attached to this email.</p>',
+    )
+    : html;
+  const apiText = inlineImage
+    ? `${text}\n\nThe package photo is attached to this email.`
+    : text;
+  const apiAttachments = [
+    ...(attachment || []),
+    ...(inlineImage ? [{ name: inlineImage.name, content: inlineImage.content }] : []),
+  ];
 
   const apiKey = process.env.BREVO_API_KEY;
   if (!apiKey) {
@@ -116,9 +84,9 @@ async function sendBrevoEmail({ to, subject, text, html, attachment, inlineImage
         },
         to: [{ email: to }],
         subject,
-        textContent: text,
-        htmlContent: html,
-        ...(attachment?.length ? { attachment } : {}),
+        textContent: apiText,
+        htmlContent: apiHtml,
+        ...(apiAttachments.length ? { attachment: apiAttachments } : {}),
       }),
     });
   } catch (error) {
@@ -1287,4 +1255,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { brevoApiFailure, createApp, passwordDigest, passwordMatches, seedAdmin };
+module.exports = { brevoApiFailure, createApp, passwordDigest, passwordMatches, seedAdmin, sendBrevoEmail };

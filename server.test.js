@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const { after, before, test } = require('node:test');
 const { createDatabase } = require('./db');
-const { brevoApiFailure, createApp, seedAdmin } = require('./server');
+const { brevoApiFailure, createApp, seedAdmin, sendBrevoEmail } = require('./server');
 
 let database;
 let server;
@@ -164,6 +164,52 @@ test('admin accounts can be created through the registration endpoint', async ()
     assert.match(brevoApiFailure(401, 'Key not found'), /transactional API key/i);
     assert.match(brevoApiFailure(403, 'IP address not authorized'), /Render outbound IP/i);
     assert.match(brevoApiFailure(500), /could not send the email/i);
+  });
+
+  test('order email uses the Brevo API with the package photo attached without SMTP credentials', async () => {
+    const environmentNames = ['BREVO_API_KEY', 'BREVO_SENDER_EMAIL', 'BREVO_SENDER_NAME', 'BREVO_SMTP_LOGIN', 'BREVO_SMTP_KEY', 'BREVO_SMTP_PORT'];
+    const previousEnvironment = Object.fromEntries(environmentNames.map(name => [name, process.env[name]]));
+    const originalFetch = global.fetch;
+    let apiRequest;
+    process.env.BREVO_API_KEY = 'test-transactional-key';
+    process.env.BREVO_SENDER_EMAIL = 'sender@example.com';
+    process.env.BREVO_SENDER_NAME = 'A&M Logistics';
+    for (const name of environmentNames.slice(3)) delete process.env[name];
+    global.fetch = async (url, options) => {
+      apiRequest = { url, options, body: JSON.parse(options.body) };
+      return new Response('{}', { status: 201 });
+    };
+
+    try {
+      await sendBrevoEmail({
+        to: 'customer@example.com',
+        subject: 'Delivery request received',
+        text: 'Your delivery is in.',
+        html: '<p>Your delivery is in.</p><img src="cid:package-photo" alt="Package photo" width="500">',
+        inlineImage: {
+          name: 'package-AO-TEST-01.jpg',
+          content: 'dGVzdC1pbWFnZQ==',
+          contentType: 'image/jpeg',
+          cid: 'package-photo',
+        },
+      });
+
+      assert.equal(apiRequest.url, 'https://api.brevo.com/v3/smtp/email');
+      assert.equal(apiRequest.options.headers['api-key'], 'test-transactional-key');
+      assert.deepEqual(apiRequest.body.attachment, [{
+        name: 'package-AO-TEST-01.jpg',
+        content: 'dGVzdC1pbWFnZQ==',
+      }]);
+      assert.doesNotMatch(apiRequest.body.htmlContent, /cid:package-photo/);
+      assert.match(apiRequest.body.htmlContent, /photo is attached to this email/i);
+      assert.match(apiRequest.body.textContent, /photo is attached to this email/i);
+    } finally {
+      global.fetch = originalFetch;
+      for (const name of environmentNames) {
+        if (previousEnvironment[name] === undefined) delete process.env[name];
+        else process.env[name] = previousEnvironment[name];
+      }
+    }
   });
 
   test('customer account creation succeeds if the welcome email service is unavailable', async () => {
