@@ -216,7 +216,9 @@ document.querySelector('#register-form').addEventListener('submit', async event 
     form.reset();
     updateNavigationForSession();
     const welcomeNotice = document.querySelector('#account-welcome-notice');
-    welcomeNotice.textContent = `Your account is ready. We asked our email service to send a welcome message to ${result.user.email}. If it does not arrive in a few minutes, check your Spam or Junk folder.`;
+    welcomeNotice.textContent = result.warning
+      ? `Your account is ready, but we could not send a welcome email to ${result.user.email}. You can continue using your account.`
+      : `Your account is ready. We asked our email service to send a welcome message to ${result.user.email}. If it does not arrive in a few minutes, check your Spam or Junk folder.`;
     welcomeNotice.hidden = false;
     closeAuthScreen();
     await showDashboard();

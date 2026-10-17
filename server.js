@@ -528,6 +528,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
         role: 'customer',
         registered_at: registeredAt,
       });
+      let notificationWarning = false;
       try {
         const content = emailContent('Welcome to A&M Logistics', [
           `Hello ${name}, your customer account has been created.`,
@@ -535,11 +536,14 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
         ]);
         await sendEmail({ to: email, subject: 'Welcome to A&M Logistics', ...content });
       } catch (error) {
-        await database.remove('users', user => user.id === id);
-        throw error;
+        console.error('Customer welcome email notification failed:', error);
+        notificationWarning = true;
       }
       await createSession(database, response, 'customer', id);
-      response.status(201).json({ user: { id, email, name, phone, registeredAt } });
+      response.status(201).json({
+        user: { id, email, name, phone, registeredAt },
+        ...(notificationWarning ? { warning: 'Your account was created, but the welcome email could not be sent.' } : {}),
+      });
     } catch (error) {
       next(error);
     }

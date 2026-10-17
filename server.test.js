@@ -11,6 +11,7 @@ let failDeliveredEmail;
 let failInTransitEmail;
 let failNewOrderEmail;
 let failRiderApplicationEmail;
+let failCustomerWelcomeEmail;
 
 async function request(route, { method = 'GET', body, cookie } = {}) {
   const response = await fetch(`${baseUrl}${route}`, {
@@ -35,6 +36,7 @@ before(async () => {
   failInTransitEmail = false;
   failNewOrderEmail = false;
   failRiderApplicationEmail = false;
+  failCustomerWelcomeEmail = false;
   database = createDatabase(':memory:');
   await seedAdmin(database);
   server = createApp(database, {
@@ -48,6 +50,9 @@ before(async () => {
       }
       if (failRiderApplicationEmail && /rider application received/i.test(email.subject)) {
         throw new Error('Simulated rider application email outage.');
+      }
+      if (failCustomerWelcomeEmail && /welcome to a&m logistics/i.test(email.subject)) {
+        throw new Error('Simulated welcome email outage.');
       }
       emails.push(email);
     },
@@ -142,6 +147,27 @@ test('admin accounts can be created through the registration endpoint', async ()
       email: 'unauthorized-admin@example.com',
       password: 'new-admin-password-123',
     },
+  });
+
+  test('customer account creation succeeds if the welcome email service is unavailable', async () => {
+    failCustomerWelcomeEmail = true;
+    const registration = await request('/api/auth/register', {
+      method: 'POST',
+      body: {
+        name: 'Email Outage Customer',
+        phone: '555-0144',
+        email: 'email-outage-customer@example.com',
+        password: 'email-outage-password-123',
+      },
+    });
+    failCustomerWelcomeEmail = false;
+    assert.equal(registration.response.status, 201);
+    assert.match(registration.cookie, /^ao_customer_session=/);
+    assert.equal(registration.result.user.email, 'email-outage-customer@example.com');
+    assert.match(registration.result.warning, /account was created/i);
+    const profile = await request('/api/auth/me', { cookie: registration.cookie });
+    assert.equal(profile.response.status, 200);
+    assert.equal(profile.result.user.email, 'email-outage-customer@example.com');
   });
   assert.equal(unauthenticatedRegistration.response.status, 403);
 
@@ -302,7 +328,7 @@ test('customer and rider workflows share orders, assignment, and notifications',
   const customerRegistration = await request('/api/admin/registrations', { cookie: adminCookie });
   assert.deepEqual(
     customerRegistration.result.registrations.map(registration => registration.type).sort(),
-    ['Customer', 'Rider', 'Rider'],
+    ['Customer', 'Customer', 'Rider', 'Rider'],
   );
 
   const order = await request('/api/customer/orders', {
