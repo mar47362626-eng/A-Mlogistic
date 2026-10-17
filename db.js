@@ -98,6 +98,10 @@ function createDatabase(directory = path.join(__dirname, 'data')) {
       const record = state[name].find(predicate);
       return returnedRecord(name, record);
     },
+    findById(name, id) {
+      const record = state[name].find(entry => entry.id === id);
+      return returnedRecord(name, record);
+    },
     list(name, predicate = () => true) {
       return state[name].filter(predicate).map(record => returnedRecord(name, record));
     },
@@ -283,6 +287,11 @@ function createSupabaseDatabase({
     },
     async find(collection, predicate) {
       return (await getRecords(collection)).find(predicate);
+    },
+    async findById(collection, id) {
+      const query = `?collection=eq.${encodeURIComponent(collection)}&record_id=eq.${encodeURIComponent(String(id))}&select=collection,record_id,email,reference,token_hash,data&limit=1`;
+      const [record] = await request({ query });
+      return record ? decodeRecord(record) : undefined;
     },
     async list(collection, predicate = () => true) {
       return (await getRecords(collection)).filter(predicate);

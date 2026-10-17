@@ -43,6 +43,7 @@ test('JSON collections persist across restarts and retain order photos', () => {
     test('Supabase adapter preserves records and package photo bytes across CRUD operations', async () => {
       const rows = new Map();
       let authorizationHeader;
+      let lastGetUrl;
       const database = createSupabaseDatabase({
         url: 'https://example.supabase.co',
         serviceRoleKey: 'test-service-role-key',
@@ -53,8 +54,11 @@ test('JSON collections persist across restarts and retain order photos', () => {
           let result = [];
 
           if (method === 'GET') {
+            lastGetUrl = url;
             const collection = parsedUrl.searchParams.get('collection')?.replace(/^eq\./, '');
-            result = [...rows.values()].filter(row => !collection || row.collection === collection);
+            const recordId = parsedUrl.searchParams.get('record_id')?.replace(/^eq\./, '');
+            result = [...rows.values()].filter(row => (!collection || row.collection === collection)
+              && (!recordId || row.record_id === recordId));
           } else if (method === 'POST') {
             result = JSON.parse(options.body);
             for (const row of result) rows.set(`${row.collection}:${row.record_id}`, row);
@@ -81,6 +85,8 @@ test('JSON collections persist across restarts and retain order photos', () => {
       });
       assert.equal(authorizationHeader, 'Bearer test-service-role-key');
       assert.deepEqual((await database.find('orders', order => order.id === 'order-1')).photo, photo);
+      assert.deepEqual((await database.findById('orders', 'order-1')).photo, photo);
+      assert.match(lastGetUrl, /record_id=eq\.order-1/);
 
       await database.update('orders', order => order.id === 'order-1', order => ({
         ...order,
@@ -198,6 +204,7 @@ test('JSON collections persist across restarts and retain order photos', () => {
     const restartedDatabase = createDatabase(directory);
     assert.equal(restartedDatabase.find('users', user => user.id === 'user-1').email, 'customer@example.com');
     assert.deepEqual(restartedDatabase.find('orders', order => order.id === 'order-1').photo, Buffer.from([0, 1, 2, 255]));
+    assert.deepEqual(restartedDatabase.findById('orders', 'order-1').photo, Buffer.from([0, 1, 2, 255]));
     assert.deepEqual(restartedDatabase.find('notifications', notification => notification.id === 'notification-1').recipients, ['customer@example.com']);
     for (const filename of ['users.json', 'riders.json', 'orders.json', 'notifications.json', 'sessions.json']) {
       assert.ok(Array.isArray(JSON.parse(fs.readFileSync(path.join(directory, filename), 'utf8'))));

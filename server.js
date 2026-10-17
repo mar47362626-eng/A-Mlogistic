@@ -849,7 +849,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
   });
 
   app.get('/api/orders/:id/photo', requireAdminRole, async (request, response) => {
-    const order = await database.find('orders', record => record.id === request.params.id);
+    const order = await database.findById('orders', request.params.id);
     if (!order) return response.status(404).json({ error: 'Order not found.' });
     const isOwner = request.auth.role === 'customer' && order.user_id === request.auth.principalId;
     const isAssignedRider = request.auth.role === 'rider' && order.rider_id === request.auth.principalId;
