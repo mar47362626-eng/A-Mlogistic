@@ -33,6 +33,17 @@ function escapeHtml(value) {
   })[character]);
 }
 
+function brevoApiFailure(status, providerMessage = '') {
+  const message = typeof providerMessage === 'string' ? providerMessage : '';
+  if (status === 401 || status === 403) {
+    if (/ip|allow.?list|authori[sz]ed address/i.test(message)) {
+      return 'Brevo rejected this server IP. Add the Render outbound IP addresses to Brevo’s authorized-IP list, then redeploy or restart the Render service.';
+    }
+    return 'Brevo rejected the API key. Create a new transactional API key in Brevo, update BREVO_API_KEY in Render (not the SMTP key), then redeploy or restart the service. If Brevo uses IP restrictions, allow the Render outbound IPs too.';
+  }
+  return 'Brevo could not send the email. Please try again or contact the administrator.';
+}
+
 async function sendBrevoEmail({ to, subject, text, html, attachment, inlineImage }) {
   const senderEmail = normalizeEmail(process.env.BREVO_SENDER_EMAIL);
   if (!senderEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(senderEmail)) {
@@ -115,8 +126,17 @@ async function sendBrevoEmail({ to, subject, text, html, attachment, inlineImage
     throw requestError('Brevo could not be reached to send the email. Please try again.', 502);
   }
   if (!result.ok) {
-    console.error(`Brevo email request failed with status ${result.status}.`);
-    throw requestError('Brevo could not send the email. Please try again or contact the administrator.', 502);
+    const responseText = await result.text();
+    let providerMessage = '';
+    if (responseText) {
+      try {
+        providerMessage = JSON.parse(responseText).message || '';
+      } catch {
+        providerMessage = '';
+      }
+    }
+    console.error(`Brevo email request failed with status ${result.status}${providerMessage ? `: ${providerMessage.slice(0, 240)}` : '.'}`);
+    throw requestError(brevoApiFailure(result.status, providerMessage), 502);
   }
 }
 
@@ -1265,4 +1285,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createApp, passwordDigest, passwordMatches, seedAdmin };
+module.exports = { brevoApiFailure, createApp, passwordDigest, passwordMatches, seedAdmin };

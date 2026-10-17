@@ -1,7 +1,7 @@
 const assert = require('node:assert/strict');
 const { after, before, test } = require('node:test');
 const { createDatabase } = require('./db');
-const { createApp, seedAdmin } = require('./server');
+const { brevoApiFailure, createApp, seedAdmin } = require('./server');
 
 let database;
 let server;
@@ -147,6 +147,12 @@ test('admin accounts can be created through the registration endpoint', async ()
       email: 'unauthorized-admin@example.com',
       password: 'new-admin-password-123',
     },
+  });
+
+  test('Brevo authorization errors explain whether the API key or server IP needs attention', () => {
+    assert.match(brevoApiFailure(401, 'Key not found'), /transactional API key/i);
+    assert.match(brevoApiFailure(403, 'IP address not authorized'), /Render outbound IP/i);
+    assert.match(brevoApiFailure(500), /could not send the email/i);
   });
 
   test('customer account creation succeeds if the welcome email service is unavailable', async () => {
