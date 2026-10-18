@@ -100,7 +100,7 @@
         <div class="view-heading"><div><h2>Send a notification</h2><p>Email a message to registered customers, riders, or everyone and add it to their dashboards.</p></div></div>
         <form id="notification-form" class="notification-form">
           <label>Subject<input name="subject" required maxlength="100" placeholder="A short message title"></label>
-          <label>Send to<select name="audience"><option value="everyone">All registered users and riders</option><option value="customers">Registered users</option><option value="riders">Registered riders</option></select></label>
+          <label>Send to<select name="audience"><option value="everyone">Everyone — customers and riders</option><option value="customers">Customers only (registered users)</option><option value="riders">Riders only</option></select></label>
           <label>Message<textarea name="message" rows="6" required maxlength="1200" placeholder="Write your update"></textarea></label>
           <button class="status-editor-button" type="submit">Send notification</button>
           <p class="notification-status" id="notification-status" role="status" aria-live="polite"></p>

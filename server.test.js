@@ -608,6 +608,44 @@ test('customer and rider workflows share orders, assignment, and notifications',
   assert.equal(customerMessages.result.notifications[0].subject, 'Route update');
   assert.equal(riderMessages.result.notifications[0].subject, 'Route update');
 
+  const customerOnlyEmailStart = emails.length;
+  const customerOnlyNotification = await request('/api/admin/notifications', {
+    method: 'POST',
+    cookie: adminCookie,
+    body: { subject: 'Customer-only update', message: 'For customers only.', audience: 'customers' },
+  });
+  assert.equal(customerOnlyNotification.response.status, 201);
+  assert.equal(customerOnlyNotification.result.notification.recipientCount, 2);
+  assert.deepEqual(
+    emails.slice(customerOnlyEmailStart).map(email => email.to).sort(),
+    ['customer@example.com', 'email-outage-customer@example.com'],
+  );
+  const customerOnlySaved = database.find('notifications', notification => notification.id === customerOnlyNotification.result.notification.id);
+  assert.deepEqual(customerOnlySaved.recipients.sort(), ['customer@example.com', 'email-outage-customer@example.com']);
+  const customerNotificationsAfterTargetedSend = await request('/api/customer/notifications', { cookie: customer.cookie });
+  const riderNotificationsAfterCustomerSend = await request('/api/rider/notifications', { cookie: riderLogin.cookie });
+  assert.ok(customerNotificationsAfterTargetedSend.result.notifications.some(notification => notification.subject === 'Customer-only update'));
+  assert.ok(!riderNotificationsAfterCustomerSend.result.notifications.some(notification => notification.subject === 'Customer-only update'));
+
+  const riderOnlyEmailStart = emails.length;
+  const riderOnlyNotification = await request('/api/admin/notifications', {
+    method: 'POST',
+    cookie: adminCookie,
+    body: { subject: 'Rider-only update', message: 'For riders only.', audience: 'riders' },
+  });
+  assert.equal(riderOnlyNotification.response.status, 201);
+  assert.equal(riderOnlyNotification.result.notification.recipientCount, 2);
+  assert.deepEqual(
+    emails.slice(riderOnlyEmailStart).map(email => email.to).sort(),
+    ['jordan.rider@example.com', 'rider@example.com'],
+  );
+  const riderOnlySaved = database.find('notifications', notification => notification.id === riderOnlyNotification.result.notification.id);
+  assert.deepEqual(riderOnlySaved.recipients.sort(), ['jordan.rider@example.com', 'rider@example.com']);
+  const customerNotificationsAfterRiderSend = await request('/api/customer/notifications', { cookie: customer.cookie });
+  const riderNotificationsAfterTargetedSend = await request('/api/rider/notifications', { cookie: riderLogin.cookie });
+  assert.ok(!customerNotificationsAfterRiderSend.result.notifications.some(notification => notification.subject === 'Rider-only update'));
+  assert.ok(riderNotificationsAfterTargetedSend.result.notifications.some(notification => notification.subject === 'Rider-only update'));
+
   failNewOrderEmail = true;
   const savedDespiteEmailFailure = await request('/api/customer/orders', {
     method: 'POST',
