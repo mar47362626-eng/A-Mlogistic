@@ -4,6 +4,7 @@ const crypto = require('node:crypto');
 const path = require('node:path');
 const { promisify } = require('node:util');
 const express = require('express');
+const nodemailer = require('nodemailer');
 const { createConfiguredDatabase } = require('./db');
 
 const scrypt = promisify(crypto.scrypt);
@@ -49,6 +50,51 @@ async function sendBrevoEmail({ to, subject, text, html, attachment, inlineImage
     throw requestError('Email delivery is not configured. Set a valid BREVO_SENDER_EMAIL.', 503);
   }
   const senderName = process.env.BREVO_SENDER_NAME || 'A&M Logistics';
+  if (inlineImage && process.env.BREVO_SMTP_LOGIN && process.env.BREVO_SMTP_KEY) {
+    const smtpPort = Number(process.env.BREVO_SMTP_PORT || 587);
+    if (![465, 587, 2525].includes(smtpPort)) {
+      console.warn('BREVO_SMTP_PORT is invalid; sending package photo as an attachment through the Brevo API.');
+    } else {
+      const transporter = nodemailer.createTransport({
+        host: 'smtp-relay.brevo.com',
+        port: smtpPort,
+        secure: smtpPort === 465,
+        requireTLS: smtpPort !== 465,
+        auth: {
+          user: process.env.BREVO_SMTP_LOGIN,
+          pass: process.env.BREVO_SMTP_KEY,
+        },
+      });
+      try {
+        await transporter.sendMail({
+          from: { name: senderName, address: senderEmail },
+          to,
+          subject,
+          text,
+          html,
+          attachments: [
+            ...(attachment || []).map(file => ({
+              filename: file.name,
+              content: Buffer.from(file.content, 'base64'),
+            })),
+            {
+              filename: inlineImage.name,
+              content: Buffer.from(inlineImage.content, 'base64'),
+              contentType: inlineImage.contentType,
+              cid: inlineImage.cid,
+            },
+          ],
+        });
+        return;
+      } catch (error) {
+        console.warn(
+          'Brevo SMTP inline-photo delivery failed; retrying through the transactional API with the photo attached.',
+          error.code || error.responseCode || 'unknown error',
+        );
+      }
+    }
+  }
+
   const apiHtml = inlineImage
     ? html.replace(
       /<img src="cid:[^"]+" alt="Package photo"[^>]*>/,

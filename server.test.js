@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const { after, before, test } = require('node:test');
+const nodemailer = require('nodemailer');
 const { createDatabase } = require('./db');
 const { brevoApiFailure, createApp, seedAdmin, sendBrevoEmail } = require('./server');
 
@@ -205,6 +206,57 @@ test('admin accounts can be created through the registration endpoint', async ()
       assert.match(apiRequest.body.textContent, /photo is attached to this email/i);
     } finally {
       global.fetch = originalFetch;
+      for (const name of environmentNames) {
+        if (previousEnvironment[name] === undefined) delete process.env[name];
+        else process.env[name] = previousEnvironment[name];
+      }
+    }
+  });
+
+  test('order email embeds the package photo inline when SMTP is configured', async () => {
+    const environmentNames = ['BREVO_SENDER_EMAIL', 'BREVO_SENDER_NAME', 'BREVO_SMTP_LOGIN', 'BREVO_SMTP_KEY', 'BREVO_SMTP_PORT'];
+    const previousEnvironment = Object.fromEntries(environmentNames.map(name => [name, process.env[name]]));
+    const originalCreateTransport = nodemailer.createTransport;
+    let transportOptions;
+    let sentMessage;
+    process.env.BREVO_SENDER_EMAIL = 'sender@example.com';
+    process.env.BREVO_SENDER_NAME = 'A&M Logistics';
+    process.env.BREVO_SMTP_LOGIN = 'test-smtp-login';
+    process.env.BREVO_SMTP_KEY = 'test-smtp-key';
+    process.env.BREVO_SMTP_PORT = '2525';
+    nodemailer.createTransport = options => {
+      transportOptions = options;
+      return {
+        sendMail: async message => {
+          sentMessage = message;
+        },
+      };
+    };
+
+    try {
+      await sendBrevoEmail({
+        to: 'customer@example.com',
+        subject: 'Delivery request received',
+        text: 'Your delivery is in.',
+        html: '<p>Your delivery is in.</p><img src="cid:package-photo" alt="Package photo" width="500">',
+        inlineImage: {
+          name: 'package-AO-TEST-01.jpg',
+          content: 'dGVzdC1pbWFnZQ==',
+          contentType: 'image/jpeg',
+          cid: 'package-photo',
+        },
+      });
+
+      assert.equal(transportOptions.host, 'smtp-relay.brevo.com');
+      assert.equal(transportOptions.port, 2525);
+      assert.equal(transportOptions.auth.user, 'test-smtp-login');
+      assert.equal(sentMessage.from.address, 'sender@example.com');
+      assert.match(sentMessage.html, /src="cid:package-photo"/);
+      assert.equal(sentMessage.attachments[0].cid, 'package-photo');
+      assert.equal(sentMessage.attachments[0].contentType, 'image/jpeg');
+      assert.deepEqual(sentMessage.attachments[0].content, Buffer.from('test-image'));
+    } finally {
+      nodemailer.createTransport = originalCreateTransport;
       for (const name of environmentNames) {
         if (previousEnvironment[name] === undefined) delete process.env[name];
         else process.env[name] = previousEnvironment[name];
