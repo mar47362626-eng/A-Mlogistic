@@ -132,30 +132,31 @@ async function renderOrders() {
     reference.textContent = order.reference;
     info.append(title, route, pickupDate, status);
     card.append(image, info, reference);
-    if (order.deliveryPriceNgn !== null && order.deliveryPriceNgn !== undefined) {
-      const payment = document.createElement('section');
-      payment.className = 'payment-summary';
-      const quote = document.createElement('p');
-      quote.textContent = `Estimated fee: ${formatNgn(order.deliveryPriceNgn)} for ${order.deliveryDistanceKm} km. Each started kilometre is charged.`;
-      const paymentStatus = document.createElement('p');
-      paymentStatus.className = 'payment-status';
-      const statusMessages = {
-        unpaid: 'Payment instructions are available after A&M confirms your order.',
-        proof_submitted: 'Transfer reference submitted. Waiting for A&M to verify payment.',
-        paid: 'Payment verified by A&M.',
-      };
-      paymentStatus.textContent = statusMessages[order.paymentStatus] || 'Payment status pending.';
-      payment.append(quote, paymentStatus);
+    const payment = document.createElement('section');
+    payment.className = 'payment-summary';
+    const quote = document.createElement('p');
+    quote.textContent = order.deliveryPriceNgn !== null && order.deliveryPriceNgn !== undefined
+      ? `Delivery fee confirmed: ${formatNgn(order.deliveryPriceNgn)}${order.deliveryDistanceKm != null ? ` · approximately ${order.deliveryDistanceKm} km` : ''}.`
+      : 'A&M Logistics will confirm your delivery fee after reviewing the route.';
+    const paymentStatus = document.createElement('p');
+    paymentStatus.className = 'payment-status';
+    const statusMessages = {
+      unpaid: 'Payment instructions are available after A&M confirms your order.',
+      proof_submitted: 'Transfer reference submitted. Waiting for A&M to verify payment.',
+      paid: 'Payment verified by A&M.',
+    };
+    paymentStatus.textContent = statusMessages[order.paymentStatus] || 'Payment status pending.';
+    payment.append(quote, paymentStatus);
 
-      if (order.status === 'Confirmed' && order.paymentStatus !== 'paid') {
-        const instructionsButton = document.createElement('button');
-        instructionsButton.type = 'button';
-        instructionsButton.className = 'payment-details-button';
-        instructionsButton.textContent = 'View bank transfer details';
-        const details = document.createElement('div');
-        details.className = 'payment-details';
-        details.hidden = true;
-        instructionsButton.addEventListener('click', async () => {
+    if (order.status === 'Confirmed' && order.deliveryPriceNgn != null && order.paymentStatus !== 'paid') {
+      const instructionsButton = document.createElement('button');
+      instructionsButton.type = 'button';
+      instructionsButton.className = 'payment-details-button';
+      instructionsButton.textContent = 'View bank transfer details';
+      const details = document.createElement('div');
+      details.className = 'payment-details';
+      details.hidden = true;
+      instructionsButton.addEventListener('click', async () => {
           if (!details.hidden) {
             details.hidden = true;
             return;
@@ -235,11 +236,10 @@ async function renderOrders() {
           } finally {
             instructionsButton.disabled = false;
           }
-        });
-        payment.append(instructionsButton, details);
-      }
-      card.append(payment);
+      });
+      payment.append(instructionsButton, details);
     }
+    card.append(payment);
     list.append(card);
   });
 }

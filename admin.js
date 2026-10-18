@@ -190,51 +190,110 @@ function renderDetail(order, message = '', messageState = 'success') {
   addDetailCopy(detailPanel, 'Handling notes', order.description);
   if (order.notes) addDetailCopy(detailPanel, 'Additional instructions', order.notes);
 
+  const payment = document.createElement('section');
+  payment.className = 'detail-copy';
+  const paymentHeading = document.createElement('h3');
+  paymentHeading.textContent = 'Delivery fee and payment';
+  payment.append(paymentHeading);
   if (order.deliveryPriceNgn !== null && order.deliveryPriceNgn !== undefined) {
-    const payment = document.createElement('section');
-    payment.className = 'detail-copy';
-    const paymentHeading = document.createElement('h3');
-    paymentHeading.textContent = 'Delivery quote and payment';
     const paymentFields = document.createElement('dl');
     paymentFields.className = 'detail-fields';
-    addDetailField(paymentFields, 'Driving distance', `${order.deliveryDistanceKm} km`);
-    addDetailField(paymentFields, 'Estimated delivery fee', formatNgn(order.deliveryPriceNgn));
+    if (order.deliveryDistanceKm != null) addDetailField(paymentFields, 'Approximate distance', `${order.deliveryDistanceKm} km`);
+    addDetailField(paymentFields, 'Delivery fee', formatNgn(order.deliveryPriceNgn));
     addDetailField(paymentFields, 'Payment status', order.paymentStatus || 'unpaid');
     if (order.transferReference) addDetailField(paymentFields, 'Customer transaction reference', order.transferReference);
-    payment.append(paymentHeading, paymentFields);
-    if (order.paymentStatus === 'proof_submitted') {
-      const verifyButton = document.createElement('button');
-      verifyButton.type = 'button';
-      verifyButton.className = 'button button-dark';
-      verifyButton.textContent = 'Verify payment';
-      const verifyStatus = document.createElement('p');
-      verifyStatus.className = 'status-message';
-      verifyStatus.setAttribute('role', 'status');
-      verifyButton.addEventListener('click', async () => {
-        verifyButton.disabled = true;
-        verifyButton.textContent = 'Verifying…';
-        try {
-          const result = await api.request(`/api/admin/orders/${encodeURIComponent(order.id)}/payment`, {
-            method: 'PATCH',
-          });
-          orders = orders.map(savedOrder => savedOrder.id === result.order.id ? result.order : savedOrder);
-          renderMetrics();
-          renderQueue();
-          renderDetail(
-            result.order,
-            result.warning || 'Payment marked as verified.',
-            result.warning ? 'error' : 'success',
-          );
-        } catch (error) {
-          api.setStatus(verifyStatus, error.message);
-          verifyButton.disabled = false;
-          verifyButton.textContent = 'Verify payment';
-        }
-      });
-      payment.append(verifyButton, verifyStatus);
-    }
-    detailPanel.append(payment);
+    payment.append(paymentFields);
+  } else {
+    addDetailCopy(payment, 'Quote status', 'Set the delivery fee before confirming this order.');
   }
+  if (currentStatus(order) === 'Received') {
+    const quoteForm = document.createElement('form');
+    quoteForm.className = 'status-editor';
+    const feeLabel = document.createElement('label');
+    feeLabel.textContent = 'Delivery fee (NGN)';
+    const feeInput = document.createElement('input');
+    feeInput.name = 'deliveryPriceNgn';
+    feeInput.type = 'number';
+    feeInput.min = '0';
+    feeInput.max = '1000000000';
+    feeInput.step = '1';
+    feeInput.required = true;
+    feeInput.value = order.deliveryPriceNgn ?? '';
+    feeLabel.append(feeInput);
+    const distanceLabel = document.createElement('label');
+    distanceLabel.textContent = 'Approximate route distance in km (optional)';
+    const distanceInput = document.createElement('input');
+    distanceInput.name = 'deliveryDistanceKm';
+    distanceInput.type = 'number';
+    distanceInput.min = '0.1';
+    distanceInput.max = '100000';
+    distanceInput.step = 'any';
+    distanceInput.value = order.deliveryDistanceKm ?? '';
+    distanceLabel.append(distanceInput);
+    const saveQuoteButton = document.createElement('button');
+    saveQuoteButton.type = 'submit';
+    saveQuoteButton.className = 'button button-dark';
+    saveQuoteButton.textContent = order.deliveryPriceNgn == null ? 'Save delivery fee' : 'Update delivery fee';
+    const quoteStatus = document.createElement('p');
+    quoteStatus.className = 'status-message';
+    quoteStatus.setAttribute('role', 'status');
+    quoteForm.append(feeLabel, distanceLabel, saveQuoteButton, quoteStatus);
+    quoteForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      saveQuoteButton.disabled = true;
+      try {
+        const result = await api.request(`/api/admin/orders/${encodeURIComponent(order.id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            status: currentStatus(order),
+            riderId: order.riderId || '',
+            deliveryPriceNgn: Number(feeInput.value),
+            deliveryDistanceKm: distanceInput.value ? Number(distanceInput.value) : null,
+          }),
+        });
+        orders = orders.map(savedOrder => savedOrder.id === result.order.id ? result.order : savedOrder);
+        renderMetrics();
+        renderQueue();
+        renderDetail(result.order, result.warning || 'Delivery fee saved.', result.warning ? 'error' : 'success');
+      } catch (error) {
+        api.setStatus(quoteStatus, error.message);
+        saveQuoteButton.disabled = false;
+      }
+    });
+    payment.append(quoteForm);
+  }
+  if (order.paymentStatus === 'proof_submitted') {
+    const verifyButton = document.createElement('button');
+    verifyButton.type = 'button';
+    verifyButton.className = 'button button-dark';
+    verifyButton.textContent = 'Verify payment';
+    const verifyStatus = document.createElement('p');
+    verifyStatus.className = 'status-message';
+    verifyStatus.setAttribute('role', 'status');
+    verifyButton.addEventListener('click', async () => {
+      verifyButton.disabled = true;
+      verifyButton.textContent = 'Verifying…';
+      try {
+        const result = await api.request(`/api/admin/orders/${encodeURIComponent(order.id)}/payment`, {
+          method: 'PATCH',
+        });
+        orders = orders.map(savedOrder => savedOrder.id === result.order.id ? result.order : savedOrder);
+        renderMetrics();
+        renderQueue();
+        renderDetail(
+          result.order,
+          result.warning || 'Payment marked as verified.',
+          result.warning ? 'error' : 'success',
+        );
+      } catch (error) {
+        api.setStatus(verifyStatus, error.message);
+        verifyButton.disabled = false;
+        verifyButton.textContent = 'Verify payment';
+      }
+    });
+    payment.append(verifyButton, verifyStatus);
+  }
+  detailPanel.append(payment);
 
   const form = document.createElement('form');
   form.className = 'status-editor';

@@ -234,81 +234,6 @@ function requestError(message, status = 400) {
   return error;
 }
 
-function deliveryPricing() {
-  const readAmount = (name, fallback) => {
-    const raw = process.env[name];
-    const amount = raw === undefined || raw === '' ? fallback : Number(raw);
-    if (!Number.isSafeInteger(amount) || amount < 0) {
-      throw requestError(`${name} must be a non-negative whole number of naira.`, 503);
-    }
-    return amount;
-  };
-  return {
-    baseFeeNgn: readAmount('DELIVERY_BASE_FEE_NGN', 2500),
-    ratePerKmNgn: readAmount('DELIVERY_RATE_PER_KM_NGN', 1000),
-  };
-}
-
-function calculateDeliveryPrice(distanceMeters, pricing = deliveryPricing()) {
-  if (!Number.isSafeInteger(distanceMeters) || distanceMeters <= 0) {
-    throw requestError('A valid driving route could not be calculated for these addresses.', 422);
-  }
-  const distanceKm = Math.ceil(distanceMeters / 1000);
-  const totalNgn = pricing.baseFeeNgn + distanceKm * pricing.ratePerKmNgn;
-  if (!Number.isSafeInteger(totalNgn)) {
-    throw requestError('The calculated delivery fee is outside the supported price range.', 422);
-  }
-  return {
-    distanceMeters,
-    distanceKm,
-    baseFeeNgn: pricing.baseFeeNgn,
-    ratePerKmNgn: pricing.ratePerKmNgn,
-    totalNgn,
-  };
-}
-
-async function getGoogleDrivingDistanceMeters(pickup, delivery, {
-  apiKey = process.env.GOOGLE_MAPS_API_KEY,
-  fetchImpl = fetch,
-} = {}) {
-  if (!apiKey) throw requestError('Route pricing is not configured. Contact A&M Logistics.', 503);
-  let response;
-  try {
-    response = await fetchImpl('https://routes.googleapis.com/directions/v2:computeRoutes', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': apiKey,
-        'X-Goog-FieldMask': 'routes.distanceMeters',
-      },
-      body: JSON.stringify({
-        origin: { address: pickup },
-        destination: { address: delivery },
-        travelMode: 'DRIVE',
-        routingPreference: 'TRAFFIC_UNAWARE',
-      }),
-    });
-  } catch (error) {
-    console.error('Google Maps Routes request failed:', error.message);
-    throw requestError('The route service could not be reached. Please try again shortly.', 502);
-  }
-  if (!response.ok) {
-    console.error('Google Maps Routes returned HTTP', response.status);
-    throw requestError('The route service could not calculate this delivery. Please check the addresses or try again.', 502);
-  }
-  let result;
-  try {
-    result = await response.json();
-  } catch {
-    throw requestError('The route service returned an invalid response. Please try again.', 502);
-  }
-  const distanceMeters = result.routes?.[0]?.distanceMeters;
-  if (!Number.isSafeInteger(distanceMeters) || distanceMeters <= 0) {
-    throw requestError('No driving route was found for these addresses. Check both addresses and try again.', 422);
-  }
-  return distanceMeters;
-}
-
 function bankTransferDetails() {
   const details = {
     bankName: process.env.BANK_NAME?.trim(),
@@ -523,8 +448,8 @@ async function orderStatusEmailTasks(database, order, status, sendEmail) {
   if (status === 'Confirmed' && order.delivery_price_ngn != null) {
     const bank = bankTransferDetails();
     details.push(
-      `Driving distance: ${order.delivery_distance_km} km (each started kilometre is charged).`,
-      `Amount to pay: ${formatNaira(order.delivery_price_ngn)}.`,
+      ...(order.delivery_distance_km != null ? [`Approximate route distance: ${order.delivery_distance_km} km.`] : []),
+      `Delivery fee confirmed by A&M: ${formatNaira(order.delivery_price_ngn)}.`,
       `Bank: ${bank.bankName}`,
       `Account name: ${bank.accountName}`,
       `Account number: ${bank.accountNumber}`,
@@ -578,7 +503,6 @@ function parsePhoto(dataUrl) {
 
 function createApp(database, {
   sendEmail = sendBrevoEmail,
-  getDistanceMeters = getGoogleDrivingDistanceMeters,
 } = {}) {
   const app = express();
   const requireCustomer = authenticate(database, 'customer');
@@ -930,8 +854,6 @@ function createApp(database, {
       const phone = textField(request.body, 'phone', { max: 40 });
       const notes = textField(request.body, 'notes', { min: 0, max: 1200 });
       const { photo, type } = parsePhoto(request.body.photo);
-      const pricing = deliveryPricing();
-      const quote = calculateDeliveryPrice(await getDistanceMeters(pickup, delivery), pricing);
       const id = crypto.randomUUID();
       const reference = `AO-${new Date().toISOString().slice(2, 10).replaceAll('-', '')}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
       const createdAt = Date.now();
@@ -952,11 +874,8 @@ function createApp(database, {
         photo,
         photo_type: type,
         status: 'Received',
-        delivery_distance_meters: quote.distanceMeters,
-        delivery_distance_km: quote.distanceKm,
-        delivery_base_fee_ngn: quote.baseFeeNgn,
-        delivery_rate_per_km_ngn: quote.ratePerKmNgn,
-        delivery_price_ngn: quote.totalNgn,
+        delivery_distance_km: null,
+        delivery_price_ngn: null,
         payment_status: 'unpaid',
         transfer_reference: null,
         transfer_submitted_at: null,
@@ -982,8 +901,7 @@ function createApp(database, {
         `Item: ${quantity} × ${item}`,
         `Pickup: ${pickup}`,
         `Delivery: ${delivery}`,
-        `Driving distance: ${quote.distanceKm} km (each started kilometre is charged).`,
-        `Estimated delivery fee: ${formatNaira(quote.totalNgn)}. The final amount is confirmed by A&M Logistics.`,
+        'A&M Logistics will review the route and confirm the delivery fee before requesting payment.',
       ];
       const notificationWarning = await sendNotifications([
         sendEmail({
@@ -995,7 +913,7 @@ function createApp(database, {
             details.slice(0, 1).concat(
               `Pickup: ${pickup}`,
               `Delivery: ${delivery}`,
-              `Estimated delivery fee: ${formatNaira(quote.totalNgn)} for ${quote.distanceKm} km. A&M will confirm the order and amount before payment.`,
+              'A&M Logistics will review the route and confirm the delivery fee before requesting payment.',
             ),
           ),
         }),
@@ -1186,6 +1104,31 @@ function createApp(database, {
       if (!order) throw requestError('Order not found.', 404);
       const status = request.body.status;
       if (!orderStatuses.includes(status)) throw requestError('Choose a valid delivery status.');
+      let deliveryPriceNgn = order.delivery_price_ngn ?? null;
+      let deliveryDistanceKm = order.delivery_distance_km ?? null;
+      if (Object.hasOwn(request.body, 'deliveryPriceNgn')) {
+        const requestedPrice = Number(request.body.deliveryPriceNgn);
+        if (!Number.isSafeInteger(requestedPrice) || requestedPrice < 0 || requestedPrice > 1_000_000_000) {
+          throw requestError('Enter a whole-naira delivery fee between NGN 0 and NGN 1,000,000,000.');
+        }
+        if (order.status !== 'Received' && requestedPrice !== deliveryPriceNgn) {
+          throw requestError('The delivery fee cannot be changed after the order is confirmed.', 409);
+        }
+        deliveryPriceNgn = requestedPrice;
+      }
+      if (Object.hasOwn(request.body, 'deliveryDistanceKm')) {
+        const requestedDistance = request.body.deliveryDistanceKm === null || request.body.deliveryDistanceKm === ''
+          ? null
+          : Number(request.body.deliveryDistanceKm);
+        if (requestedDistance !== null
+          && (!Number.isFinite(requestedDistance) || requestedDistance <= 0 || requestedDistance > 100_000)) {
+          throw requestError('Enter a valid approximate distance greater than 0 km, or leave it blank.');
+        }
+        if (order.status !== 'Received' && requestedDistance !== deliveryDistanceKm) {
+          throw requestError('The route distance cannot be changed after the order is confirmed.', 409);
+        }
+        deliveryDistanceKm = requestedDistance;
+      }
       let riderId = order.rider_id;
       if (Object.hasOwn(request.body, 'riderId')) {
         riderId = request.body.riderId || null;
@@ -1197,7 +1140,10 @@ function createApp(database, {
       if (status === 'Confirmed' && !riderId) {
         throw requestError('Assign an approved rider before confirming this delivery.');
       }
-      if (status === 'Confirmed' && order.delivery_price_ngn != null) bankTransferDetails();
+      if (status === 'Confirmed' && deliveryPriceNgn === null) {
+        throw requestError('Set the delivery fee before confirming this order.');
+      }
+      if (status === 'Confirmed') bankTransferDetails();
       if (status === 'Collected' && !order.pickup_verified_at) {
         throw requestError('Only the assigned rider can mark a pickup collected after verifying its code.', 409);
       }
@@ -1214,6 +1160,8 @@ function createApp(database, {
         ...record,
         status,
         rider_id: riderId,
+        delivery_price_ngn: deliveryPriceNgn,
+        delivery_distance_km: deliveryDistanceKm,
         updated_at: updatedAt,
         delivered_at: deliveredAt,
       }));
@@ -1537,9 +1485,7 @@ if (require.main === module) {
 
 module.exports = {
   brevoApiFailure,
-  calculateDeliveryPrice,
   createApp,
-  getGoogleDrivingDistanceMeters,
   passwordDigest,
   passwordMatches,
   seedAdmin,

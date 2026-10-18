@@ -4,9 +4,7 @@ const nodemailer = require('nodemailer');
 const { createDatabase } = require('./db');
 const {
   brevoApiFailure,
-  calculateDeliveryPrice,
   createApp,
-  getGoogleDrivingDistanceMeters,
   seedAdmin,
   sendBrevoEmail,
 } = require('./server');
@@ -42,8 +40,7 @@ before(async () => {
   process.env.BANK_NAME = 'A&M Test Bank';
   process.env.BANK_ACCOUNT_NAME = 'A&M Logistics';
   process.env.BANK_ACCOUNT_NUMBER = '0123456789';
-  process.env.DELIVERY_BASE_FEE_NGN = '2500';
-  process.env.DELIVERY_RATE_PER_KM_NGN = '1000';
+  delete process.env.GOOGLE_MAPS_API_KEY;
   emails = [];
   failDeliveredEmail = false;
   failInTransitEmail = false;
@@ -53,7 +50,6 @@ before(async () => {
   database = createDatabase(':memory:');
   await seedAdmin(database);
   server = createApp(database, {
-    getDistanceMeters: async () => 2450,
     sendEmail: async email => {
       if (failDeliveredEmail && /delivered/i.test(email.subject)) throw new Error('Simulated mail outage.');
       if (failInTransitEmail && /on its way/i.test(email.subject) && email.inlineImage) {
@@ -78,43 +74,6 @@ before(async () => {
 after(async () => {
   await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   database.close();
-});
-
-test('delivery quote rounds started kilometres up and applies server pricing', () => {
-  assert.deepEqual(calculateDeliveryPrice(2450), {
-    distanceMeters: 2450,
-    distanceKm: 3,
-    baseFeeNgn: 2500,
-    ratePerKmNgn: 1000,
-    totalNgn: 5500,
-  });
-  assert.deepEqual(calculateDeliveryPrice(1000).totalNgn, 3500);
-  assert.throws(() => calculateDeliveryPrice(0), /valid driving route/i);
-});
-
-test('Google Routes uses server-side key and requests only route distance', async () => {
-  let requestOptions;
-  const distance = await getGoogleDrivingDistanceMeters('One Street, Lagos', 'Two Street, Lagos', {
-    apiKey: 'test-google-key',
-    fetchImpl: async (url, options) => {
-      requestOptions = { url, ...options };
-      return { ok: true, json: async () => ({ routes: [{ distanceMeters: 2450 }] }) };
-    },
-  });
-  assert.equal(distance, 2450);
-  assert.equal(requestOptions.url, 'https://routes.googleapis.com/directions/v2:computeRoutes');
-  assert.equal(requestOptions.headers['X-Goog-Api-Key'], 'test-google-key');
-  assert.equal(requestOptions.headers['X-Goog-FieldMask'], 'routes.distanceMeters');
-  assert.deepEqual(JSON.parse(requestOptions.body), {
-    origin: { address: 'One Street, Lagos' },
-    destination: { address: 'Two Street, Lagos' },
-    travelMode: 'DRIVE',
-    routingPreference: 'TRAFFIC_UNAWARE',
-  });
-  await assert.rejects(
-    getGoogleDrivingDistanceMeters('One Street', 'Two Street', { apiKey: '', fetchImpl: fetch }),
-    error => error.status === 503,
-  );
 });
 
 test('separate site pages are served and protected APIs enforce roles', async () => {
@@ -517,8 +476,8 @@ test('customer and rider workflows share orders, assignment, and notifications',
   });
   assert.equal(order.response.status, 201);
   assert.equal(order.result.order.status, 'Received');
-  assert.equal(order.result.order.deliveryDistanceKm, 3);
-  assert.equal(order.result.order.deliveryPriceNgn, 5500);
+  assert.equal(order.result.order.deliveryDistanceKm, null);
+  assert.equal(order.result.order.deliveryPriceNgn, null);
   assert.equal(order.result.order.paymentStatus, 'unpaid');
   assert.deepEqual(
     emails.slice(-3).map(email => email.to).sort(),
@@ -531,6 +490,26 @@ test('customer and rider workflows share orders, assignment, and notifications',
   assert.equal(order.result.order.pickupEmail, 'pickup@example.com');
   assert.equal(order.result.order.deliveryEmail, 'delivery@example.com');
 
+  const confirmationWithoutFee = await request(`/api/admin/orders/${order.result.order.id}`, {
+    method: 'PATCH',
+    cookie: adminCookie,
+    body: { status: 'Confirmed', riderId: registeredRider.result.rider.id },
+  });
+  assert.equal(confirmationWithoutFee.response.status, 400);
+  assert.match(confirmationWithoutFee.result.error, /set the delivery fee/i);
+  const quoteSaved = await request(`/api/admin/orders/${order.result.order.id}`, {
+    method: 'PATCH',
+    cookie: adminCookie,
+    body: {
+      status: 'Received',
+      riderId: '',
+      deliveryPriceNgn: 5500,
+      deliveryDistanceKm: 3,
+    },
+  });
+  assert.equal(quoteSaved.response.status, 200);
+  assert.equal(quoteSaved.result.order.deliveryPriceNgn, 5500);
+  assert.equal(quoteSaved.result.order.deliveryDistanceKm, 3);
   const assignment = await request(`/api/admin/orders/${order.result.order.id}`, {
     method: 'PATCH',
     cookie: adminCookie,
@@ -539,6 +518,18 @@ test('customer and rider workflows share orders, assignment, and notifications',
   assert.equal(assignment.response.status, 200);
   assert.equal(assignment.result.order.riderName, 'Riley Rider');
   assert.equal(assignment.result.order.deliveryPriceNgn, 5500);
+  assert.equal(assignment.result.order.deliveryDistanceKm, 3);
+  const feeChangeAfterConfirmation = await request(`/api/admin/orders/${order.result.order.id}`, {
+    method: 'PATCH',
+    cookie: adminCookie,
+    body: {
+      status: 'Confirmed',
+      riderId: registeredRider.result.rider.id,
+      deliveryPriceNgn: 6000,
+      deliveryDistanceKm: 3,
+    },
+  });
+  assert.equal(feeChangeAfterConfirmation.response.status, 409);
   assert.ok(emails.some(email => email.to === 'customer@example.com' && /confirmed/i.test(email.subject)));
   assert.ok(emails.some(email => email.to === 'customer@example.com' && /5,?500/.test(email.text)));
   assert.equal(emails.at(-1).to, 'rider@example.com');
