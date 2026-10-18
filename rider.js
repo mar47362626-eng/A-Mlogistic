@@ -109,7 +109,15 @@ function renderDeliveries(orders, warning = '') {
     date.textContent = `Pickup date: ${order.date}`;
     item.append(photo, heading, status, pickup, pickupEmail, delivery, date);
     if (order.status === 'Confirmed' && !order.pickupVerified) {
-      addHandoffControls(item, order, 'pickup');
+      if (order.deliveryPriceNgn !== null && order.deliveryPriceNgn !== undefined && order.paymentStatus !== 'paid') {
+        const payment = document.createElement('p');
+        payment.textContent = order.paymentStatus === 'proof_submitted'
+          ? 'The customer submitted a transfer reference. A&M must verify payment before pickup.'
+          : 'Waiting for customer payment. Pickup code becomes available after A&M verifies the transfer.';
+        item.append(payment);
+      } else {
+        addHandoffControls(item, order, 'pickup');
+      }
     } else if (order.pickupVerified && !order.deliveryVerified
       && ['Collected', 'In transit'].includes(order.status)) {
       addHandoffControls(item, order, 'delivery');

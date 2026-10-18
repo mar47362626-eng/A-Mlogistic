@@ -26,6 +26,10 @@ function formattedTimestamp(value) {
   return Number.isNaN(date.getTime()) ? 'Not set' : new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(date);
 }
 
+function formatNgn(amount) {
+  return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(amount);
+}
+
 function addCell(row, value, className = '') {
   const cell = document.createElement('td');
   if (className) cell.className = className;
@@ -185,6 +189,52 @@ function renderDetail(order, message = '', messageState = 'success') {
   detailPanel.append(route);
   addDetailCopy(detailPanel, 'Handling notes', order.description);
   if (order.notes) addDetailCopy(detailPanel, 'Additional instructions', order.notes);
+
+  if (order.deliveryPriceNgn !== null && order.deliveryPriceNgn !== undefined) {
+    const payment = document.createElement('section');
+    payment.className = 'detail-copy';
+    const paymentHeading = document.createElement('h3');
+    paymentHeading.textContent = 'Delivery quote and payment';
+    const paymentFields = document.createElement('dl');
+    paymentFields.className = 'detail-fields';
+    addDetailField(paymentFields, 'Driving distance', `${order.deliveryDistanceKm} km`);
+    addDetailField(paymentFields, 'Estimated delivery fee', formatNgn(order.deliveryPriceNgn));
+    addDetailField(paymentFields, 'Payment status', order.paymentStatus || 'unpaid');
+    if (order.transferReference) addDetailField(paymentFields, 'Customer transaction reference', order.transferReference);
+    payment.append(paymentHeading, paymentFields);
+    if (order.paymentStatus === 'proof_submitted') {
+      const verifyButton = document.createElement('button');
+      verifyButton.type = 'button';
+      verifyButton.className = 'button button-dark';
+      verifyButton.textContent = 'Verify payment';
+      const verifyStatus = document.createElement('p');
+      verifyStatus.className = 'status-message';
+      verifyStatus.setAttribute('role', 'status');
+      verifyButton.addEventListener('click', async () => {
+        verifyButton.disabled = true;
+        verifyButton.textContent = 'Verifying…';
+        try {
+          const result = await api.request(`/api/admin/orders/${encodeURIComponent(order.id)}/payment`, {
+            method: 'PATCH',
+          });
+          orders = orders.map(savedOrder => savedOrder.id === result.order.id ? result.order : savedOrder);
+          renderMetrics();
+          renderQueue();
+          renderDetail(
+            result.order,
+            result.warning || 'Payment marked as verified.',
+            result.warning ? 'error' : 'success',
+          );
+        } catch (error) {
+          api.setStatus(verifyStatus, error.message);
+          verifyButton.disabled = false;
+          verifyButton.textContent = 'Verify payment';
+        }
+      });
+      payment.append(verifyButton, verifyStatus);
+    }
+    detailPanel.append(payment);
+  }
 
   const form = document.createElement('form');
   form.className = 'status-editor';

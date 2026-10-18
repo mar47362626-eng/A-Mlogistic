@@ -94,6 +94,10 @@ async function loadOrders() {
   return (await api.request('/api/customer/orders')).orders;
 }
 
+function formatNgn(amount) {
+  return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(amount);
+}
+
 async function renderOrders() {
   const list = document.querySelector('#order-list');
   list.replaceChildren();
@@ -128,6 +132,114 @@ async function renderOrders() {
     reference.textContent = order.reference;
     info.append(title, route, pickupDate, status);
     card.append(image, info, reference);
+    if (order.deliveryPriceNgn !== null && order.deliveryPriceNgn !== undefined) {
+      const payment = document.createElement('section');
+      payment.className = 'payment-summary';
+      const quote = document.createElement('p');
+      quote.textContent = `Estimated fee: ${formatNgn(order.deliveryPriceNgn)} for ${order.deliveryDistanceKm} km. Each started kilometre is charged.`;
+      const paymentStatus = document.createElement('p');
+      paymentStatus.className = 'payment-status';
+      const statusMessages = {
+        unpaid: 'Payment instructions are available after A&M confirms your order.',
+        proof_submitted: 'Transfer reference submitted. Waiting for A&M to verify payment.',
+        paid: 'Payment verified by A&M.',
+      };
+      paymentStatus.textContent = statusMessages[order.paymentStatus] || 'Payment status pending.';
+      payment.append(quote, paymentStatus);
+
+      if (order.status === 'Confirmed' && order.paymentStatus !== 'paid') {
+        const instructionsButton = document.createElement('button');
+        instructionsButton.type = 'button';
+        instructionsButton.className = 'payment-details-button';
+        instructionsButton.textContent = 'View bank transfer details';
+        const details = document.createElement('div');
+        details.className = 'payment-details';
+        details.hidden = true;
+        instructionsButton.addEventListener('click', async () => {
+          if (!details.hidden) {
+            details.hidden = true;
+            return;
+          }
+          if (details.dataset.loaded === 'true') {
+            details.hidden = false;
+            return;
+          }
+          details.replaceChildren();
+          instructionsButton.disabled = true;
+          try {
+            const instructions = await api.request(`/api/customer/orders/${encodeURIComponent(order.id)}/payment-instructions`);
+            [
+              `Bank: ${instructions.bank.bankName}`,
+              `Account name: ${instructions.bank.accountName}`,
+              `Account number: ${instructions.bank.accountNumber}`,
+              `Amount: ${formatNgn(instructions.amountNgn)}`,
+              `Transfer narration/reference: ${instructions.paymentReference}`,
+            ].forEach(line => {
+              const detail = document.createElement('p');
+              detail.textContent = line;
+              details.append(detail);
+            });
+            const form = document.createElement('form');
+            form.className = 'payment-reference-form';
+            const label = document.createElement('label');
+            label.textContent = 'Bank transaction reference';
+            const input = document.createElement('input');
+            input.name = 'transferReference';
+            input.required = true;
+            input.minLength = 3;
+            input.maxLength = 100;
+            input.autocomplete = 'off';
+            input.placeholder = 'Enter the reference shown by your bank';
+            input.value = instructions.transferReference || '';
+            label.append(input);
+            const submit = document.createElement('button');
+            submit.type = 'submit';
+            submit.className = 'payment-details-button';
+            submit.textContent = order.paymentStatus === 'proof_submitted'
+              ? 'Update transaction reference'
+              : 'Submit transaction reference';
+            const message = document.createElement('p');
+            message.className = 'payment-status';
+            message.setAttribute('role', 'status');
+            form.append(label, submit, message);
+            form.addEventListener('submit', async event => {
+              event.preventDefault();
+              submit.disabled = true;
+              try {
+                const submitted = await api.request(`/api/customer/orders/${encodeURIComponent(order.id)}/payment-reference`, {
+                  method: 'POST',
+                  body: JSON.stringify({ transferReference: input.value }),
+                });
+                order.paymentStatus = submitted.order.paymentStatus;
+                order.transferReference = submitted.order.transferReference;
+                paymentStatus.textContent = 'Transfer reference submitted. Waiting for A&M to verify payment.';
+                message.textContent = submitted.warning || 'Reference submitted. A&M will verify the transfer before pickup.';
+                if (submitted.warning) message.dataset.state = 'error';
+                else delete message.dataset.state;
+                submit.textContent = 'Update transaction reference';
+              } catch (error) {
+                message.textContent = error.message;
+                message.dataset.state = 'error';
+                submit.disabled = false;
+              }
+            });
+            details.append(form);
+            details.dataset.loaded = 'true';
+            details.hidden = false;
+          } catch (error) {
+            const message = document.createElement('p');
+            message.className = 'payment-status';
+            message.textContent = error.message;
+            details.replaceChildren(message);
+            details.hidden = false;
+          } finally {
+            instructionsButton.disabled = false;
+          }
+        });
+        payment.append(instructionsButton, details);
+      }
+      card.append(payment);
+    }
     list.append(card);
   });
 }

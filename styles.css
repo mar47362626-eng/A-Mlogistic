@@ -194,6 +194,17 @@ h2 { font: 600 43px/1.15 var(--display); letter-spacing: -1.1px; }
 .order-card p { color: var(--muted); font-size: 10px; line-height: 1.5; margin: 0; }
 .order-status { display: inline-flex; margin-top: 8px; padding: 4px 7px; background: #e3e9d4; color: #4d6426; font-size: 9px; font-weight: 700; }
 .order-reference { color: #697f32; font-size: 9px; font-weight: 700; text-align: right; }
+.payment-summary { grid-column: 1 / -1; display: grid; gap: 8px; padding: 12px; background: #f7f7f1; }
+.payment-summary > p { margin: 0; }
+.payment-summary .payment-status { color: #435c20; }
+.payment-details-button { justify-self: start; border: 1px solid #bfc3b5; background: transparent; padding: 8px 11px; color: var(--ink); font-size: 10px; font-weight: 700; cursor: pointer; }
+.payment-details { display: grid; gap: 7px; }
+.payment-details[hidden] { display: none; }
+.payment-details > p { color: var(--ink); overflow-wrap: anywhere; }
+.payment-reference-form { display: grid; gap: 9px; padding-top: 8px; }
+.payment-reference-form label { display: grid; gap: 6px; font-size: 10px; font-weight: 700; }
+.payment-reference-form input { width: 100%; border: 1px solid var(--line); background: white; padding: 9px; font-size: 11px; }
+.payment-reference-form .payment-status[data-state="error"] { color: #a13d2b; }
 body.auth-screen-active { background: var(--forest); }
 body.auth-screen-active > .site-header, body.auth-screen-active > .site-footer { display: none; }
 body.auth-screen-active main { min-height: 100vh; }

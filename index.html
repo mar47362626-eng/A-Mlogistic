@@ -102,7 +102,7 @@
             <div class="feedback-banner" id="account-welcome-notice" role="status" aria-live="polite" hidden></div>
             <div class="dashboard-heading"><div><p class="eyebrow">YOUR A&M ACCOUNT</p><h3>Good to see you, <span id="customer-name"></span></h3></div><div class="dashboard-actions"><button class="button button-dark" id="show-order-form" type="button" aria-expanded="false" aria-controls="order-form">Place an order</button><button class="sign-out" id="sign-out" type="button">Log out</button></div></div>
             <form class="portal-form order-form" id="order-form" hidden>
-              <div><h3>Start a delivery order</h3><p class="form-lead">Tell us what to collect and where it needs to go.</p></div>
+              <div><h3>Start a delivery order</h3><p class="form-lead">Tell us what to collect and where it needs to go. Your estimate uses Google Maps driving distance; A&M confirms the amount before payment.</p></div>
               <div class="form-row">
                 <label>What are we collecting?<input name="item" required placeholder="Box, chair, equipment..."></label>
                 <label>Number of items<input name="quantity" type="number" min="1" max="100" value="1" required></label>
@@ -111,8 +111,8 @@
               <label class="upload-label">Photo of the item <span>Required · JPG, PNG, or WebP, up to 5 MB</span><input id="order-photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp" required></label>
               <div class="photo-preview" id="photo-preview" hidden><img id="photo-preview-image" alt="Preview of the selected item"><div><strong id="photo-file-name"></strong><span>Ready to attach to your request</span></div><button id="remove-photo" type="button" aria-label="Remove selected photo">×</button></div>
               <div class="form-row address-row">
-                <label>Pickup address<textarea name="pickup" rows="3" autocomplete="street-address" required placeholder="Street, town or city, postcode"></textarea></label>
-                <label>Delivery address<textarea name="delivery" rows="3" required placeholder="Street, town or city, postcode"></textarea></label>
+                <label>Pickup address<textarea name="pickup" rows="3" autocomplete="street-address" required placeholder="Street, city, state"></textarea></label>
+                <label>Delivery address<textarea name="delivery" rows="3" required placeholder="Street, city, state"></textarea></label>
               </div>
               <div class="form-row">
                 <label>Pickup contact email<input name="pickupEmail" type="email" autocomplete="email" required placeholder="person at pickup"></label>

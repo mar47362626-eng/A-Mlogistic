@@ -234,6 +234,97 @@ function requestError(message, status = 400) {
   return error;
 }
 
+function deliveryPricing() {
+  const readAmount = (name, fallback) => {
+    const raw = process.env[name];
+    const amount = raw === undefined || raw === '' ? fallback : Number(raw);
+    if (!Number.isSafeInteger(amount) || amount < 0) {
+      throw requestError(`${name} must be a non-negative whole number of naira.`, 503);
+    }
+    return amount;
+  };
+  return {
+    baseFeeNgn: readAmount('DELIVERY_BASE_FEE_NGN', 2500),
+    ratePerKmNgn: readAmount('DELIVERY_RATE_PER_KM_NGN', 1000),
+  };
+}
+
+function calculateDeliveryPrice(distanceMeters, pricing = deliveryPricing()) {
+  if (!Number.isSafeInteger(distanceMeters) || distanceMeters <= 0) {
+    throw requestError('A valid driving route could not be calculated for these addresses.', 422);
+  }
+  const distanceKm = Math.ceil(distanceMeters / 1000);
+  const totalNgn = pricing.baseFeeNgn + distanceKm * pricing.ratePerKmNgn;
+  if (!Number.isSafeInteger(totalNgn)) {
+    throw requestError('The calculated delivery fee is outside the supported price range.', 422);
+  }
+  return {
+    distanceMeters,
+    distanceKm,
+    baseFeeNgn: pricing.baseFeeNgn,
+    ratePerKmNgn: pricing.ratePerKmNgn,
+    totalNgn,
+  };
+}
+
+async function getGoogleDrivingDistanceMeters(pickup, delivery, {
+  apiKey = process.env.GOOGLE_MAPS_API_KEY,
+  fetchImpl = fetch,
+} = {}) {
+  if (!apiKey) throw requestError('Route pricing is not configured. Contact A&M Logistics.', 503);
+  let response;
+  try {
+    response = await fetchImpl('https://routes.googleapis.com/directions/v2:computeRoutes', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': apiKey,
+        'X-Goog-FieldMask': 'routes.distanceMeters',
+      },
+      body: JSON.stringify({
+        origin: { address: pickup },
+        destination: { address: delivery },
+        travelMode: 'DRIVE',
+        routingPreference: 'TRAFFIC_UNAWARE',
+      }),
+    });
+  } catch (error) {
+    console.error('Google Maps Routes request failed:', error.message);
+    throw requestError('The route service could not be reached. Please try again shortly.', 502);
+  }
+  if (!response.ok) {
+    console.error('Google Maps Routes returned HTTP', response.status);
+    throw requestError('The route service could not calculate this delivery. Please check the addresses or try again.', 502);
+  }
+  let result;
+  try {
+    result = await response.json();
+  } catch {
+    throw requestError('The route service returned an invalid response. Please try again.', 502);
+  }
+  const distanceMeters = result.routes?.[0]?.distanceMeters;
+  if (!Number.isSafeInteger(distanceMeters) || distanceMeters <= 0) {
+    throw requestError('No driving route was found for these addresses. Check both addresses and try again.', 422);
+  }
+  return distanceMeters;
+}
+
+function bankTransferDetails() {
+  const details = {
+    bankName: process.env.BANK_NAME?.trim(),
+    accountName: process.env.BANK_ACCOUNT_NAME?.trim(),
+    accountNumber: process.env.BANK_ACCOUNT_NUMBER?.trim(),
+  };
+  if (Object.values(details).some(value => !value)) {
+    throw requestError('Bank transfer details are not configured. Contact A&M Logistics.', 503);
+  }
+  return details;
+}
+
+function formatNaira(amount) {
+  return `NGN ${Number(amount).toLocaleString('en-NG')}`;
+}
+
 function cookieValue(request, name) {
   const cookieHeader = request.headers.cookie || '';
   const entry = cookieHeader.split(';').map(value => value.trim()).find(value => value.startsWith(`${name}=`));
@@ -356,7 +447,7 @@ function adminRider(rider) {
   return { ...publicRider(rider), license: rider.license };
 }
 
-async function publicOrder(database, order) {
+async function publicOrder(database, order, { includeTransferReference = false } = {}) {
   const rider = order.rider_id
     ? await database.find('riders', record => record.id === order.rider_id)
     : null;
@@ -378,6 +469,12 @@ async function publicOrder(database, order) {
     notes: order.notes,
     photoType: order.photo_type,
     status: order.status,
+    deliveryDistanceKm: order.delivery_distance_km ?? null,
+    deliveryPriceNgn: order.delivery_price_ngn ?? null,
+    deliveryBaseFeeNgn: order.delivery_base_fee_ngn ?? null,
+    deliveryRatePerKmNgn: order.delivery_rate_per_km_ngn ?? null,
+    paymentStatus: order.payment_status || null,
+    ...(includeTransferReference ? { transferReference: order.transfer_reference || '' } : {}),
     pickupVerified: Boolean(order.pickup_verified_at),
     deliveryVerified: Boolean(order.delivery_verified_at),
     riderId: order.rider_id,
@@ -423,6 +520,17 @@ async function orderStatusEmailTasks(database, order, status, sendEmail) {
     `Pickup: ${order.pickup}`,
     `Delivery: ${order.delivery}`,
   ];
+  if (status === 'Confirmed' && order.delivery_price_ngn != null) {
+    const bank = bankTransferDetails();
+    details.push(
+      `Driving distance: ${order.delivery_distance_km} km (each started kilometre is charged).`,
+      `Amount to pay: ${formatNaira(order.delivery_price_ngn)}.`,
+      `Bank: ${bank.bankName}`,
+      `Account name: ${bank.accountName}`,
+      `Account number: ${bank.accountNumber}`,
+      `Use ${order.reference} as the transfer narration/reference, then submit your bank transaction reference in your A&M account.`,
+    );
+  }
   const orderContent = orderEmailContent(order, update.title, details);
   const tasks = [sendEmail({
     to: customer.email,
@@ -468,7 +576,10 @@ function parsePhoto(dataUrl) {
   return { photo, type: match[1] };
 }
 
-function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
+function createApp(database, {
+  sendEmail = sendBrevoEmail,
+  getDistanceMeters = getGoogleDrivingDistanceMeters,
+} = {}) {
   const app = express();
   const requireCustomer = authenticate(database, 'customer');
   const optionalCustomer = authenticate(database, 'customer', { allowAnonymous: true });
@@ -792,7 +903,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
   app.get('/api/customer/orders', requireCustomer, async (request, response) => {
     const orders = (await database.list('orders', order => order.user_id === request.auth.principalId))
       .sort((first, second) => second.created_at - first.created_at)
-      .map(order => publicOrder(database, order));
+      .map(order => publicOrder(database, order, { includeTransferReference: true }));
     response.json({ orders: await Promise.all(orders) });
   });
 
@@ -819,6 +930,8 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
       const phone = textField(request.body, 'phone', { max: 40 });
       const notes = textField(request.body, 'notes', { min: 0, max: 1200 });
       const { photo, type } = parsePhoto(request.body.photo);
+      const pricing = deliveryPricing();
+      const quote = calculateDeliveryPrice(await getDistanceMeters(pickup, delivery), pricing);
       const id = crypto.randomUUID();
       const reference = `AO-${new Date().toISOString().slice(2, 10).replaceAll('-', '')}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
       const createdAt = Date.now();
@@ -839,6 +952,15 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
         photo,
         photo_type: type,
         status: 'Received',
+        delivery_distance_meters: quote.distanceMeters,
+        delivery_distance_km: quote.distanceKm,
+        delivery_base_fee_ngn: quote.baseFeeNgn,
+        delivery_rate_per_km_ngn: quote.ratePerKmNgn,
+        delivery_price_ngn: quote.totalNgn,
+        payment_status: 'unpaid',
+        transfer_reference: null,
+        transfer_submitted_at: null,
+        payment_verified_at: null,
         rider_id: null,
         created_at: createdAt,
         updated_at: null,
@@ -860,6 +982,8 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
         `Item: ${quantity} × ${item}`,
         `Pickup: ${pickup}`,
         `Delivery: ${delivery}`,
+        `Driving distance: ${quote.distanceKm} km (each started kilometre is charged).`,
+        `Estimated delivery fee: ${formatNaira(quote.totalNgn)}. The final amount is confirmed by A&M Logistics.`,
       ];
       const notificationWarning = await sendNotifications([
         sendEmail({
@@ -868,7 +992,11 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
           ...orderEmailContent(
             order,
             'Your delivery request is in',
-            details.slice(0, 1).concat(`Pickup: ${pickup}`, `Delivery: ${delivery}`),
+            details.slice(0, 1).concat(
+              `Pickup: ${pickup}`,
+              `Delivery: ${delivery}`,
+              `Estimated delivery fee: ${formatNaira(quote.totalNgn)} for ${quote.distanceKm} km. A&M will confirm the order and amount before payment.`,
+            ),
           ),
         }),
         ...adminRecipients.map(email => sendEmail({
@@ -880,6 +1008,64 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
       response.status(201).json({
         order: await publicOrder(database, order),
         ...(notificationWarning ? { warning: 'Your request was saved, but one or more order emails could not be sent.' } : {}),
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/customer/orders/:id/payment-instructions', requireCustomer, async (request, response) => {
+    const order = await database.find('orders', record => record.id === request.params.id
+      && record.user_id === request.auth.principalId);
+    if (!order) throw requestError('Order not found.', 404);
+    if (order.status !== 'Confirmed' || order.delivery_price_ngn == null) {
+      throw requestError('Payment instructions are available after A&M confirms your priced order.', 409);
+    }
+    response.json({
+      bank: bankTransferDetails(),
+      amountNgn: order.delivery_price_ngn,
+      distanceKm: order.delivery_distance_km,
+      paymentReference: order.reference,
+      paymentStatus: order.payment_status || 'unpaid',
+      transferReference: order.transfer_reference || '',
+    });
+  });
+
+  app.post('/api/customer/orders/:id/payment-reference', requireCustomer, async (request, response, next) => {
+    try {
+      const order = await database.find('orders', record => record.id === request.params.id
+        && record.user_id === request.auth.principalId);
+      if (!order) throw requestError('Order not found.', 404);
+      if (order.status !== 'Confirmed' || order.delivery_price_ngn == null) {
+        throw requestError('You can submit payment details after A&M confirms your priced order.', 409);
+      }
+      if (order.payment_status === 'paid') throw requestError('This order has already been marked as paid.', 409);
+      const transferReference = textField(request.body, 'transferReference', { min: 3, max: 100 });
+      const updatedOrder = await database.update('orders', record => record.id === order.id, record => ({
+        ...record,
+        payment_status: 'proof_submitted',
+        transfer_reference: transferReference,
+        transfer_submitted_at: Date.now(),
+        updated_at: Date.now(),
+      }));
+      const customer = await database.find('users', user => user.id === order.user_id);
+      const admins = await adminEmails();
+      const notificationWarning = await sendNotifications(admins.map(email => sendEmail({
+        to: email,
+        subject: `Payment reference submitted · ${order.reference}`,
+        ...orderEmailContent(order, 'Customer submitted a bank transfer reference', [
+          `Customer: ${customer?.name || customer?.email || 'Customer'} (${customer?.email || ''})`,
+          `Order: ${order.reference}`,
+          `Amount due: ${formatNaira(order.delivery_price_ngn)}.`,
+          `Customer transaction reference: ${transferReference}`,
+          'Review the transfer in the business bank account, then verify payment in the admin order details.',
+        ]),
+      })), 'Payment review');
+      response.json({
+        order: await publicOrder(database, updatedOrder, { includeTransferReference: true }),
+        ...(notificationWarning
+          ? { warning: 'Your reference was saved, but one or more admin email alerts could not be sent. Please contact A&M Logistics.' }
+          : {}),
       });
     } catch (error) {
       next(error);
@@ -910,7 +1096,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
   app.get('/api/admin/orders', requireAdmin, async (request, response) => {
     const orders = (await database.list('orders'))
       .sort((first, second) => second.created_at - first.created_at)
-      .map(order => publicOrder(database, order));
+      .map(order => publicOrder(database, order, { includeTransferReference: true }));
     response.json({ orders: await Promise.all(orders) });
   });
 
@@ -1011,6 +1197,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
       if (status === 'Confirmed' && !riderId) {
         throw requestError('Assign an approved rider before confirming this delivery.');
       }
+      if (status === 'Confirmed' && order.delivery_price_ngn != null) bankTransferDetails();
       if (status === 'Collected' && !order.pickup_verified_at) {
         throw requestError('Only the assigned rider can mark a pickup collected after verifying its code.', 409);
       }
@@ -1041,7 +1228,7 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
           `Pickup: ${order.pickup}`,
           `Delivery: ${order.delivery}`,
           `Pickup date: ${order.pickup_date}`,
-          'Sign in to your rider account to view the delivery and request the pickup verification code.',
+          'Sign in to view the delivery. The pickup verification code becomes available after A&M verifies payment.',
         ]);
         emailTasks.push(sendEmail({
           to: rider.email,
@@ -1051,8 +1238,45 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
       }
       const notificationWarning = await sendNotifications(emailTasks, 'Order status');
       response.json({
-        order: await publicOrder(database, updatedOrder),
+        order: await publicOrder(database, updatedOrder, { includeTransferReference: true }),
         ...(notificationWarning ? { warning: 'The order was saved, but one or more email notifications could not be sent.' } : {}),
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.patch('/api/admin/orders/:id/payment', requireAdmin, async (request, response, next) => {
+    try {
+      const order = await database.find('orders', record => record.id === request.params.id);
+      if (!order) throw requestError('Order not found.', 404);
+      if (order.status !== 'Confirmed' || order.delivery_price_ngn == null) {
+        throw requestError('Only a confirmed, priced order can be verified for payment.', 409);
+      }
+      if (order.payment_status === 'paid') throw requestError('This order is already marked as paid.', 409);
+      if (order.payment_status !== 'proof_submitted' || !order.transfer_reference) {
+        throw requestError('The customer must submit a bank transaction reference before payment can be verified.', 409);
+      }
+      const verifiedAt = Date.now();
+      const updatedOrder = await database.update('orders', record => record.id === order.id, record => ({
+        ...record,
+        payment_status: 'paid',
+        payment_verified_at: verifiedAt,
+        updated_at: verifiedAt,
+      }));
+      const customer = await database.find('users', user => user.id === order.user_id);
+      const notificationWarning = await sendNotifications(customer?.email ? [sendEmail({
+        to: customer.email,
+        subject: `Payment confirmed · ${order.reference}`,
+        ...orderEmailContent(order, 'Your payment has been confirmed', [
+          `Payment for delivery ${order.reference} has been verified by A&M Logistics.`,
+          `Amount received: ${formatNaira(order.delivery_price_ngn)}.`,
+          'Your assigned rider can now arrange collection. We will keep you updated as the delivery progresses.',
+        ]),
+      })] : [], 'Payment confirmation');
+      response.json({
+        order: await publicOrder(database, updatedOrder, { includeTransferReference: true }),
+        ...(notificationWarning ? { warning: 'Payment was verified, but the customer email could not be sent.' } : {}),
       });
     } catch (error) {
       next(error);
@@ -1068,6 +1292,9 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
       const phase = request.body.phase;
       if (phase !== 'pickup' && phase !== 'delivery') throw requestError('Choose pickup or delivery verification.');
       const isPickup = phase === 'pickup';
+      if (isPickup && order.delivery_price_ngn != null && order.payment_status !== 'paid') {
+        throw requestError('A&M must verify payment before the rider can request a pickup code.', 409);
+      }
       if (isPickup && (order.status !== 'Confirmed' || order.pickup_verified_at)) {
         throw requestError('Pickup verification is only available for a confirmed, uncollected delivery.', 409);
       }
@@ -1308,4 +1535,13 @@ if (require.main === module) {
   });
 }
 
-module.exports = { brevoApiFailure, createApp, passwordDigest, passwordMatches, seedAdmin, sendBrevoEmail };
+module.exports = {
+  brevoApiFailure,
+  calculateDeliveryPrice,
+  createApp,
+  getGoogleDrivingDistanceMeters,
+  passwordDigest,
+  passwordMatches,
+  seedAdmin,
+  sendBrevoEmail,
+};

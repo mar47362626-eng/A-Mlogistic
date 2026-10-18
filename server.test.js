@@ -2,7 +2,14 @@ const assert = require('node:assert/strict');
 const { after, before, test } = require('node:test');
 const nodemailer = require('nodemailer');
 const { createDatabase } = require('./db');
-const { brevoApiFailure, createApp, seedAdmin, sendBrevoEmail } = require('./server');
+const {
+  brevoApiFailure,
+  calculateDeliveryPrice,
+  createApp,
+  getGoogleDrivingDistanceMeters,
+  seedAdmin,
+  sendBrevoEmail,
+} = require('./server');
 
 let database;
 let server;
@@ -32,6 +39,11 @@ before(async () => {
   process.env.ADMIN_EMAIL = 'admin@example.com';
   process.env.ADMIN_PASSWORD = 'test-admin-password-123';
   process.env.ALLOWED_ORIGINS = 'https://mar47362626-eng.github.io';
+  process.env.BANK_NAME = 'A&M Test Bank';
+  process.env.BANK_ACCOUNT_NAME = 'A&M Logistics';
+  process.env.BANK_ACCOUNT_NUMBER = '0123456789';
+  process.env.DELIVERY_BASE_FEE_NGN = '2500';
+  process.env.DELIVERY_RATE_PER_KM_NGN = '1000';
   emails = [];
   failDeliveredEmail = false;
   failInTransitEmail = false;
@@ -41,6 +53,7 @@ before(async () => {
   database = createDatabase(':memory:');
   await seedAdmin(database);
   server = createApp(database, {
+    getDistanceMeters: async () => 2450,
     sendEmail: async email => {
       if (failDeliveredEmail && /delivered/i.test(email.subject)) throw new Error('Simulated mail outage.');
       if (failInTransitEmail && /on its way/i.test(email.subject) && email.inlineImage) {
@@ -65,6 +78,43 @@ before(async () => {
 after(async () => {
   await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
   database.close();
+});
+
+test('delivery quote rounds started kilometres up and applies server pricing', () => {
+  assert.deepEqual(calculateDeliveryPrice(2450), {
+    distanceMeters: 2450,
+    distanceKm: 3,
+    baseFeeNgn: 2500,
+    ratePerKmNgn: 1000,
+    totalNgn: 5500,
+  });
+  assert.deepEqual(calculateDeliveryPrice(1000).totalNgn, 3500);
+  assert.throws(() => calculateDeliveryPrice(0), /valid driving route/i);
+});
+
+test('Google Routes uses server-side key and requests only route distance', async () => {
+  let requestOptions;
+  const distance = await getGoogleDrivingDistanceMeters('One Street, Lagos', 'Two Street, Lagos', {
+    apiKey: 'test-google-key',
+    fetchImpl: async (url, options) => {
+      requestOptions = { url, ...options };
+      return { ok: true, json: async () => ({ routes: [{ distanceMeters: 2450 }] }) };
+    },
+  });
+  assert.equal(distance, 2450);
+  assert.equal(requestOptions.url, 'https://routes.googleapis.com/directions/v2:computeRoutes');
+  assert.equal(requestOptions.headers['X-Goog-Api-Key'], 'test-google-key');
+  assert.equal(requestOptions.headers['X-Goog-FieldMask'], 'routes.distanceMeters');
+  assert.deepEqual(JSON.parse(requestOptions.body), {
+    origin: { address: 'One Street, Lagos' },
+    destination: { address: 'Two Street, Lagos' },
+    travelMode: 'DRIVE',
+    routingPreference: 'TRAFFIC_UNAWARE',
+  });
+  await assert.rejects(
+    getGoogleDrivingDistanceMeters('One Street', 'Two Street', { apiKey: '', fetchImpl: fetch }),
+    error => error.status === 503,
+  );
 });
 
 test('separate site pages are served and protected APIs enforce roles', async () => {
@@ -460,11 +510,16 @@ test('customer and rider workflows share orders, assignment, and notifications',
       date: '2026-10-20',
       phone: '555-0110',
       notes: '',
+      deliveryPriceNgn: 1,
+      deliveryDistanceKm: 1,
       photo: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
     },
   });
   assert.equal(order.response.status, 201);
   assert.equal(order.result.order.status, 'Received');
+  assert.equal(order.result.order.deliveryDistanceKm, 3);
+  assert.equal(order.result.order.deliveryPriceNgn, 5500);
+  assert.equal(order.result.order.paymentStatus, 'unpaid');
   assert.deepEqual(
     emails.slice(-3).map(email => email.to).sort(),
     ['admin2@example.com', 'admin@example.com', 'customer@example.com'],
@@ -483,7 +538,9 @@ test('customer and rider workflows share orders, assignment, and notifications',
   });
   assert.equal(assignment.response.status, 200);
   assert.equal(assignment.result.order.riderName, 'Riley Rider');
+  assert.equal(assignment.result.order.deliveryPriceNgn, 5500);
   assert.ok(emails.some(email => email.to === 'customer@example.com' && /confirmed/i.test(email.subject)));
+  assert.ok(emails.some(email => email.to === 'customer@example.com' && /5,?500/.test(email.text)));
   assert.equal(emails.at(-1).to, 'rider@example.com');
   assert.match(emails.at(-1).subject, /assigned/i);
   assert.equal(emails.at(-1).inlineImage.name, `package-${order.result.order.reference}.png`);
@@ -506,6 +563,54 @@ test('customer and rider workflows share orders, assignment, and notifications',
   const deliveries = await request('/api/rider/deliveries', { cookie: riderLogin.cookie });
   assert.equal(deliveries.response.status, 200);
   assert.equal(deliveries.result.orders[0].id, order.result.order.id);
+  assert.equal('transferReference' in deliveries.result.orders[0], false);
+  const paymentInstructions = await request(
+    `/api/customer/orders/${order.result.order.id}/payment-instructions`,
+    { cookie: customer.cookie },
+  );
+  assert.equal(paymentInstructions.response.status, 200);
+  assert.equal(paymentInstructions.result.amountNgn, 5500);
+  assert.equal(paymentInstructions.result.paymentReference, order.result.order.reference);
+  assert.equal(paymentInstructions.result.bank.bankName, 'A&M Test Bank');
+  const paymentCannotBeVerifiedBeforeReference = await request(`/api/admin/orders/${order.result.order.id}/payment`, {
+    method: 'PATCH',
+    cookie: adminCookie,
+  });
+  assert.equal(paymentCannotBeVerifiedBeforeReference.response.status, 409);
+  const riderCannotViewInstructions = await request(
+    `/api/customer/orders/${order.result.order.id}/payment-instructions`,
+    { cookie: riderLogin.cookie },
+  );
+  assert.equal(riderCannotViewInstructions.response.status, 403);
+  const pickupBeforePayment = await request(`/api/rider/orders/${order.result.order.id}/handoff-code`, {
+    method: 'POST',
+    cookie: riderLogin.cookie,
+    body: { phase: 'pickup' },
+  });
+  assert.equal(pickupBeforePayment.response.status, 409);
+  const submittedPaymentReference = await request(
+    `/api/customer/orders/${order.result.order.id}/payment-reference`,
+    {
+      method: 'POST',
+      cookie: customer.cookie,
+      body: { transferReference: 'BANK-TXN-2026-0042' },
+    },
+  );
+  assert.equal(submittedPaymentReference.response.status, 200);
+  assert.equal(submittedPaymentReference.result.order.paymentStatus, 'proof_submitted');
+  assert.ok(emails.some(email => email.to === 'admin@example.com' && /payment reference submitted/i.test(email.subject)));
+  const adminOrdersWithPaymentReference = await request('/api/admin/orders', { cookie: adminCookie });
+  assert.equal(
+    adminOrdersWithPaymentReference.result.orders.find(candidate => candidate.id === order.result.order.id).transferReference,
+    'BANK-TXN-2026-0042',
+  );
+  const paymentVerified = await request(`/api/admin/orders/${order.result.order.id}/payment`, {
+    method: 'PATCH',
+    cookie: adminCookie,
+  });
+  assert.equal(paymentVerified.response.status, 200);
+  assert.equal(paymentVerified.result.order.paymentStatus, 'paid');
+  assert.ok(emails.some(email => email.to === 'customer@example.com' && /payment confirmed/i.test(email.subject)));
   const riderPhoto = await fetch(`${baseUrl}/api/orders/${order.result.order.id}/photo`, {
     headers: { Cookie: riderLogin.cookie },
   });
