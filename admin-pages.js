@@ -275,7 +275,12 @@ if (pageType === 'notifications') {
       savedNotifications.unshift(result.notification);
       renderNotifications();
       form.reset();
-      api.setStatus(status, `Message sent to ${result.notification.recipientCount} recipient${result.notification.recipientCount === 1 ? '' : 's'}.`, 'success');
+      const recipientLabel = `${result.notification.recipientCount} recipient${result.notification.recipientCount === 1 ? '' : 's'}`;
+      api.setStatus(
+        status,
+        result.warning || `Email sent to ${recipientLabel} and added to their account notifications.`,
+        result.warning ? 'error' : 'success',
+      );
     } catch (error) {
       api.setStatus(status, error.message);
     } finally {

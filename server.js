@@ -1217,8 +1217,15 @@ function createApp(database, { sendEmail = sendBrevoEmail } = {}) {
         created_at: createdAt,
         recipients: uniqueRecipients,
       });
+      const notificationEmail = emailContent(subject, [message]);
+      const emailWarning = await sendNotifications(uniqueRecipients.map(to => sendEmail({
+        to,
+        subject,
+        ...notificationEmail,
+      })), 'Admin notification');
       response.status(201).json({
         notification: { id, subject, message, audience, audienceLabel: labels[audience], recipientCount: uniqueRecipients.length, createdAt },
+        ...(emailWarning ? { warning: 'The in-app notification was saved, but one or more recipient emails could not be sent.' } : {}),
       });
     } catch (error) {
       next(error);

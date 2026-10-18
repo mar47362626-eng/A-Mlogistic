@@ -20,13 +20,13 @@
   <button class="admin-menu-backdrop" type="button" aria-label="Close admin menu" hidden></button>
   <main class="admin-main">
     <header class="admin-header"><button class="admin-menu-toggle" type="button" aria-expanded="false"><span class="menu-icon" aria-hidden="true"><span></span><span></span><span></span></span><span class="menu-label">Menu</span></button><div><p class="breadcrumb">OPERATIONS <span>/</span> COMMUNICATIONS</p><h1>Notifications</h1><p class="page-summary">Send a message to registered customers, riders, or everyone.</p></div><div class="header-tools"><span class="local-tag">LIVE DATA</span><button class="refresh-button" id="refresh-page" type="button">Refresh</button></div></header>
-    <div class="storage-notice" role="note"><strong>Shared notifications</strong><span>Messages are delivered to the selected audience and appear in their account dashboards.</span></div>
+    <div class="storage-notice" role="note"><strong>Email and shared notifications</strong><span>Messages are emailed to the selected audience and appear in their account dashboards.</span></div>
     <section class="admin-data-view notification-layout standalone-notifications">
       <section class="registration-activity" aria-labelledby="admin-registrations-heading">
         <div class="view-heading"><div><h2 id="admin-registrations-heading">Recent registrations</h2><p id="registration-summary">Loading new customer and rider registrations…</p></div></div>
         <div class="registration-list" id="registration-list" aria-live="polite"><p class="empty-cell">Loading registrations…</p></div>
       </section>
-      <section class="message-composer"><div class="view-heading"><div><h2>Compose a message</h2><p>Choose who should see this update.</p></div></div>
+      <section class="message-composer"><div class="view-heading"><div><h2>Compose a message</h2><p>Choose who should receive this email and see the update.</p></div></div>
         <form id="notification-form" class="notification-form">
           <label>Subject<input name="subject" required maxlength="100" placeholder="A short message title"></label>
           <label>Send to<select name="audience"><option value="everyone">All registered users and riders</option><option value="customers">Registered users</option><option value="riders">Registered riders</option></select></label>

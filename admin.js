@@ -549,7 +549,12 @@ document.querySelector('#notification-form').addEventListener('submit', async ev
     notifications.unshift(result.notification);
     renderNotifications();
     form.reset();
-    api.setStatus(statusMessage, `Message sent to ${result.notification.recipientCount} recipient${result.notification.recipientCount === 1 ? '' : 's'}.`, 'success');
+    const recipientLabel = `${result.notification.recipientCount} recipient${result.notification.recipientCount === 1 ? '' : 's'}`;
+    api.setStatus(
+      statusMessage,
+      result.warning || `Email sent to ${recipientLabel} and added to their account notifications.`,
+      result.warning ? 'error' : 'success',
+    );
   } catch (error) {
     api.setStatus(statusMessage, error.message);
   } finally {

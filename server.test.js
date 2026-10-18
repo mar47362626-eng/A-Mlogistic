@@ -597,6 +597,12 @@ test('customer and rider workflows share orders, assignment, and notifications',
     body: { subject: 'Route update', message: 'Please check the route.', audience: 'everyone' },
   });
   assert.equal(sent.response.status, 201);
+  const customerEmailNotification = emails.find(email => email.to === 'customer@example.com' && email.subject === 'Route update');
+  const riderEmailNotification = emails.find(email => email.to === 'rider@example.com' && email.subject === 'Route update');
+  assert.ok(customerEmailNotification);
+  assert.ok(riderEmailNotification);
+  assert.match(customerEmailNotification.text, /Please check the route\./);
+  assert.match(customerEmailNotification.html, /Please check the route\./);
   const customerMessages = await request('/api/customer/notifications', { cookie: customer.cookie });
   const riderMessages = await request('/api/rider/notifications', { cookie: riderLogin.cookie });
   assert.equal(customerMessages.result.notifications[0].subject, 'Route update');
