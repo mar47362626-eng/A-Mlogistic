@@ -208,19 +208,23 @@ test('clean admin and rider URLs normalize trailing slashes and old file URLs re
   assert.equal(oldRider.headers.get('location'), '/rider');
 });
 
-test('GitHub Pages origin is allowed for credentialed API calls and untrusted origins are rejected', async () => {
-  const allowedOrigin = 'https://mar47362626-eng.github.io';
-  const preflight = await fetch(`${baseUrl}/api/auth/me`, {
-    method: 'OPTIONS',
-    headers: {
-      Origin: allowedOrigin,
-      'Access-Control-Request-Method': 'POST',
-      'Access-Control-Request-Headers': 'content-type',
-    },
-  });
-  assert.equal(preflight.status, 204);
-  assert.equal(preflight.headers.get('access-control-allow-origin'), allowedOrigin);
-  assert.equal(preflight.headers.get('access-control-allow-credentials'), 'true');
+test('deployed frontend origins are allowed for credentialed API calls and untrusted origins are rejected', async () => {
+  for (const allowedOrigin of [
+    'https://mar47362626-eng.github.io',
+    'https://a-mlogistic.netlify.app',
+  ]) {
+    const preflight = await fetch(`${baseUrl}/api/auth/me`, {
+      method: 'OPTIONS',
+      headers: {
+        Origin: allowedOrigin,
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'content-type',
+      },
+    });
+    assert.equal(preflight.status, 204);
+    assert.equal(preflight.headers.get('access-control-allow-origin'), allowedOrigin);
+    assert.equal(preflight.headers.get('access-control-allow-credentials'), 'true');
+  }
 
   const sameOrigin = await fetch(`${baseUrl}/api/auth/me`, {
     method: 'OPTIONS',

@@ -806,6 +806,7 @@ function createApp(database, {
   };
   const allowedOrigins = new Set([
     'https://mar47362626-eng.github.io',
+    'https://a-mlogistic.netlify.app',
     ...(process.env.ALLOWED_ORIGINS || '').split(',').map(origin => origin.trim()).filter(Boolean),
   ].map(origin => new URL(origin).origin));
   const isAllowedOrigin = (origin, request) => {

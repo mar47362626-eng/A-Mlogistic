@@ -21,7 +21,7 @@ Production, including the app running on Render, uses Supabase PostgreSQL. The a
 - `SUPABASE_URL`: the project's URL from Supabase **Project Settings → API**.
 - `SUPABASE_SERVICE_ROLE_KEY`: the project's service-role (secret) key from Supabase **Project Settings → API Keys**. Keep this server-side only; never put it in browser code or commit it.
 - `NODE_ENV=production`.
-- `ALLOWED_ORIGINS=https://mar47362626-eng.github.io` so the Pages frontend is permitted to call the backend. The deployed Pages origin is also included in the app's defaults; same-host Render requests are allowed automatically.
+- `ALLOWED_ORIGINS=https://mar47362626-eng.github.io,https://a-mlogistic.netlify.app` so hosted frontends are permitted to call the backend. These deployed origins are also included in the app's defaults; same-host Render requests are allowed automatically.
 - The public Render service URL is configured in `api-client.js` as `window.API_BASE_URL` before publishing the static GitHub Pages frontend; this is public configuration, not a secret.
 - Bank transfer details can be entered and saved from the **Customer transfer account** form at the top of the admin Orders page. Customers see the saved bank name, account name, account number, confirmed amount, and order reference in their payment instructions. `BANK_NAME`, `BANK_ACCOUNT_NAME`, and `BANK_ACCOUNT_NUMBER` remain optional Render environment fallbacks.
 - `DELIVERY_BASE_FEE_NGN` and `DELIVERY_RATE_PER_KM_NGN`: optional estimate settings; defaults are `2500` and `1000`.
