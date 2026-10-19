@@ -151,6 +151,31 @@ test('OpenStreetMap geocoding and OSRM driving distances are cached and converte
   assert.match(requests[2], /router\.project-osrm\.org\/route\/v1\/driving/);
 });
 
+test('route estimates retry temporary provider failures and log upstream status', async () => {
+  const requests = [];
+  const calculateRoute = createDeliveryRouteCalculator(async url => {
+    requests.push(String(url));
+    if (String(url).includes('nominatim.openstreetmap.org')) {
+      return new Response(JSON.stringify([{
+        lat: '7.3775',
+        lon: '3.9470',
+        display_name: 'Ibadan, Nigeria',
+      }]), { status: 200 });
+    }
+    if (requests.filter(requestUrl => requestUrl.includes('router.project-osrm.org')).length === 1) {
+      return new Response('Service temporarily unavailable', {
+        status: 503,
+        headers: { 'Retry-After': '0' },
+      });
+    }
+    return new Response(JSON.stringify({ code: 'Ok', routes: [{ distance: 2475 }] }), { status: 200 });
+  });
+
+  const route = await calculateRoute('Ibadan', 'Ibadan');
+  assert.equal(route.distanceKm, 2.5);
+  assert.equal(requests.filter(requestUrl => requestUrl.includes('router.project-osrm.org')).length, 2);
+});
+
 test('favicon requests redirect to the branded SVG icon', async () => {
   const legacyIcon = await fetch(`${baseUrl}/favicon.ico`, { redirect: 'manual' });
   assert.equal(legacyIcon.status, 302);

@@ -284,11 +284,42 @@ function createDeliveryRouteCalculator(fetchImpl = globalThis.fetch) {
   let geocodingQueue = Promise.resolve();
   let lastGeocodingRequestAt = 0;
 
+  async function fetchRouteProvider(url, options, providerName) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      let response;
+      try {
+        response = await fetchImpl(url, {
+          ...options,
+          signal: AbortSignal.timeout(12000),
+        });
+      } catch (error) {
+        const reason = error.code || error.name || 'unknown error';
+        if (attempt === 0) {
+          console.warn(`${providerName} request failed; retrying once (${reason}).`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          continue;
+        }
+        console.error(`${providerName} request failed after retry (${reason}).`);
+        return null;
+      }
+      if (response.ok) return response;
+
+      console.error(`${providerName} returned HTTP ${response.status}.`);
+      if (attempt === 0 && (response.status === 429 || response.status >= 500)) {
+        const retryAfterSeconds = Number(response.headers.get('retry-after'));
+        const retryDelay = Number.isFinite(retryAfterSeconds)
+          ? Math.min(Math.max(retryAfterSeconds * 1000, 1000), 5000)
+          : 1000;
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        continue;
+      }
+      return response;
+    }
+    return null;
+  }
+
   async function geocode(address) {
     const search = async () => {
-      const waitMs = Math.max(0, 1000 - (Date.now() - lastGeocodingRequestAt));
-      if (waitMs) await new Promise(resolve => setTimeout(resolve, waitMs));
-      lastGeocodingRequestAt = Date.now();
       const url = new URL('https://nominatim.openstreetmap.org/search');
       url.search = new URLSearchParams({
         q: `${address}, Nigeria`,
@@ -296,17 +327,17 @@ function createDeliveryRouteCalculator(fetchImpl = globalThis.fetch) {
         format: 'jsonv2',
         limit: '1',
       });
-      let response;
-      try {
-        response = await fetchImpl(url, {
-          headers: { 'User-Agent': 'A&M Logistics delivery distance calculator (https://a-mlogistic.onrender.com)' },
-          signal: AbortSignal.timeout(12000),
-        });
-      } catch {
+      const waitMs = Math.max(0, 1000 - (Date.now() - lastGeocodingRequestAt));
+      if (waitMs) await new Promise(resolve => setTimeout(resolve, waitMs));
+      let response = await fetchRouteProvider(url, {
+        headers: { 'User-Agent': 'A&M Logistics delivery distance calculator (https://a-mlogistic.onrender.com)' },
+      }, 'OpenStreetMap Nominatim');
+      lastGeocodingRequestAt = Date.now();
+      if (!response) {
         throw requestError('The address search service is unavailable right now. Please try again shortly.', 502);
       }
       if (!response.ok) {
-        throw requestError('The address search service could not calculate this route. Please try again later.', 502);
+        throw requestError('The address search service is temporarily unavailable. Please try again shortly.', 502);
       }
       let matches;
       try {
@@ -346,16 +377,16 @@ function createDeliveryRouteCalculator(fetchImpl = globalThis.fetch) {
     const pickupLocation = await geocode(pickup);
     const deliveryLocation = await geocode(delivery);
     const coordinates = `${pickupLocation.longitude},${pickupLocation.latitude};${deliveryLocation.longitude},${deliveryLocation.latitude}`;
-    let response;
-    try {
-      response = await fetchImpl(`https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=false&alternatives=false&steps=false`, {
-        signal: AbortSignal.timeout(12000),
-      });
-    } catch {
+    const response = await fetchRouteProvider(
+      `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=false&alternatives=false&steps=false`,
+      {},
+      'OSRM driving-route service',
+    );
+    if (!response) {
       throw requestError('The driving-route service is unavailable right now. Please try again shortly.', 502);
     }
     if (!response.ok) {
-      throw requestError('The driving-route service could not calculate this route. Please try again later.', 502);
+      throw requestError('The driving-route service is temporarily unavailable. Please try again shortly.', 502);
     }
     let result;
     try {
