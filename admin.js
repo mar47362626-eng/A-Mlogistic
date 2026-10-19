@@ -199,7 +199,11 @@ function renderDetail(order, message = '', messageState = 'success') {
     const paymentFields = document.createElement('dl');
     paymentFields.className = 'detail-fields';
     if (order.deliveryDistanceKm != null) addDetailField(paymentFields, 'Approximate distance', `${order.deliveryDistanceKm} km`);
-    addDetailField(paymentFields, 'Delivery fee', formatNgn(order.deliveryPriceNgn));
+    addDetailField(
+      paymentFields,
+      currentStatus(order) === 'Received' && !order.deliveryPriceConfirmed ? 'Customer estimate' : 'Delivery fee',
+      formatNgn(order.deliveryPriceNgn),
+    );
     addDetailField(paymentFields, 'Payment status', order.paymentStatus || 'unpaid');
     if (order.transferReference) addDetailField(paymentFields, 'Customer transaction reference', order.transferReference);
     payment.append(paymentFields);
@@ -207,10 +211,13 @@ function renderDetail(order, message = '', messageState = 'success') {
     addDetailCopy(payment, 'Quote status', 'Set the delivery fee before confirming this order.');
   }
   if (currentStatus(order) === 'Received') {
+    if (order.deliveryPriceNgn != null && !order.deliveryPriceConfirmed) {
+      addDetailCopy(payment, 'Quote status', 'This is the customer’s estimate. Review the route and adjust the final fee below before confirming.');
+    }
     const quoteForm = document.createElement('form');
     quoteForm.className = 'status-editor';
     const feeLabel = document.createElement('label');
-    feeLabel.textContent = 'Delivery fee (NGN)';
+    feeLabel.textContent = 'Final delivery fee (NGN)';
     const feeInput = document.createElement('input');
     feeInput.name = 'deliveryPriceNgn';
     feeInput.type = 'number';

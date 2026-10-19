@@ -115,6 +115,14 @@
                 <label>Delivery address<textarea name="delivery" rows="3" required placeholder="Street, city, state"></textarea></label>
               </div>
               <div class="form-row">
+                <label>Approximate route distance (km)<input id="delivery-distance" name="deliveryDistanceKm" type="number" min="0.1" max="100000" step="0.1" required placeholder="For example, 2.4"></label>
+                <div class="fee-estimate" aria-live="polite">
+                  <span>Estimated delivery fee</span>
+                  <strong id="delivery-price-preview">Enter the approximate distance to see an estimate.</strong>
+                  <small>A&M will review the addresses and confirm the final fee before payment.</small>
+                </div>
+              </div>
+              <div class="form-row">
                 <label>Pickup contact email<input name="pickupEmail" type="email" autocomplete="email" required placeholder="person at pickup"></label>
                 <label>Delivery contact email<input name="deliveryEmail" type="email" autocomplete="email" required placeholder="person receiving the item"></label>
               </div>

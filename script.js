@@ -4,6 +4,9 @@ const authView = document.querySelector('#auth-view');
 const dashboard = document.querySelector('#customer-dashboard');
 let currentUser = null;
 let selectedPhotoUrl = '';
+let deliveryPricing = null;
+const deliveryDistanceInput = document.querySelector('#delivery-distance');
+const deliveryPricePreview = document.querySelector('#delivery-price-preview');
 
 menuToggle.addEventListener('click', () => {
   const isOpen = menuToggle.getAttribute('aria-expanded') === 'true';
@@ -11,6 +14,9 @@ menuToggle.addEventListener('click', () => {
   menuToggle.setAttribute('aria-label', isOpen ? 'Open navigation' : 'Close navigation');
   navigation.classList.toggle('is-open', !isOpen);
 });
+
+deliveryDistanceInput.addEventListener('input', updateDeliveryPricePreview);
+loadDeliveryPricing();
 
 navigation.addEventListener('click', event => {
   const link = event.target.closest('a');
@@ -98,6 +104,34 @@ function formatNgn(amount) {
   return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(amount);
 }
 
+function updateDeliveryPricePreview() {
+  const distanceKm = Number(deliveryDistanceInput.value);
+  if (!deliveryPricing) {
+    deliveryPricePreview.textContent = 'The estimate could not be loaded. Refresh the page and try again.';
+    return;
+  }
+  if (!deliveryDistanceInput.value || !Number.isFinite(distanceKm) || distanceKm <= 0 || distanceKm > 100_000) {
+    deliveryPricePreview.textContent = 'Enter a distance greater than 0 and no more than 100,000 km.';
+    return;
+  }
+  const amount = deliveryPricing.baseFeeNgn + Math.ceil(distanceKm) * deliveryPricing.ratePerKmNgn;
+  if (!Number.isSafeInteger(amount) || amount > 1_000_000_000) {
+    deliveryPricePreview.textContent = 'This route is too long to estimate. Contact A&M Logistics for a quote.';
+    return;
+  }
+  deliveryPricePreview.textContent = formatNgn(amount);
+}
+
+async function loadDeliveryPricing() {
+  try {
+    deliveryPricing = await api.request('/api/pricing');
+    updateDeliveryPricePreview();
+  } catch (error) {
+    deliveryPricing = null;
+    deliveryPricePreview.textContent = `Could not load the delivery estimate: ${error.message}`;
+  }
+}
+
 async function renderOrders() {
   const list = document.querySelector('#order-list');
   list.replaceChildren();
@@ -136,7 +170,7 @@ async function renderOrders() {
     payment.className = 'payment-summary';
     const quote = document.createElement('p');
     quote.textContent = order.deliveryPriceNgn !== null && order.deliveryPriceNgn !== undefined
-      ? `Delivery fee confirmed: ${formatNgn(order.deliveryPriceNgn)}${order.deliveryDistanceKm != null ? ` · approximately ${order.deliveryDistanceKm} km` : ''}.`
+      ? `${order.status === 'Received' ? 'Estimated delivery fee' : 'Delivery fee confirmed'}: ${formatNgn(order.deliveryPriceNgn)}${order.deliveryDistanceKm != null ? ` · approximately ${order.deliveryDistanceKm} km` : ''}${order.status === 'Received' ? '. A&M will confirm the final fee after reviewing the route.' : '.'}`
       : 'A&M Logistics will confirm your delivery fee after reviewing the route.';
     const paymentStatus = document.createElement('p');
     paymentStatus.className = 'payment-status';
@@ -423,6 +457,7 @@ document.querySelector('#order-form').addEventListener('submit', async event => 
         delivery: values.get('delivery'),
         pickupEmail: values.get('pickupEmail'),
         deliveryEmail: values.get('deliveryEmail'),
+        deliveryDistanceKm: values.get('deliveryDistanceKm'),
         date: values.get('date'),
         phone: values.get('phone'),
         notes: values.get('notes'),
@@ -430,6 +465,7 @@ document.querySelector('#order-form').addEventListener('submit', async event => 
       }),
     });
     form.reset();
+    updateDeliveryPricePreview();
     document.querySelector('#photo-preview').hidden = true;
     if (selectedPhotoUrl) URL.revokeObjectURL(selectedPhotoUrl);
     selectedPhotoUrl = '';

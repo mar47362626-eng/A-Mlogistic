@@ -150,6 +150,10 @@ h2 { font: 600 43px/1.15 var(--display); letter-spacing: -1.1px; }
 .portal-form[hidden] { display: none; }
 .portal-form h3, .dashboard-heading h3, .history-heading h3 { font: 700 20px var(--display); margin: 0 0 5px; }
 .form-lead { color: var(--muted); font-size: 12px; margin: 0; line-height: 1.6; }
+.fee-estimate { display: grid; align-content: center; gap: 5px; padding: 12px 15px; border-left: 3px solid #829c3b; background: #e9ecdf; }
+.fee-estimate > span { color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .7px; }
+.fee-estimate strong { font: 700 20px var(--display); }
+.fee-estimate small { color: var(--muted); font-size: 10px; line-height: 1.5; }
 .portal-form label { display: flex; flex-direction: column; gap: 7px; font-size: 11px; font-weight: 700; }
 .portal-form input:not([type="checkbox"]):not([type="file"]), .portal-form select, .portal-form textarea { width: 100%; border: 0; border-bottom: 1px solid #bfc3b5; background: transparent; padding: 10px 0; border-radius: 0; outline: none; color: var(--ink); font-size: 12px; resize: vertical; }
 .portal-form input:focus, .portal-form textarea:focus { border-color: #70882f; box-shadow: 0 1px #70882f; }

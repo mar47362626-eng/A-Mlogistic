@@ -40,6 +40,8 @@ before(async () => {
   process.env.BANK_NAME = 'A&M Test Bank';
   process.env.BANK_ACCOUNT_NAME = 'A&M Logistics';
   process.env.BANK_ACCOUNT_NUMBER = '0123456789';
+  process.env.DELIVERY_BASE_FEE_NGN = '2500';
+  process.env.DELIVERY_RATE_PER_KM_NGN = '1000';
   delete process.env.GOOGLE_MAPS_API_KEY;
   emails = [];
   failDeliveredEmail = false;
@@ -77,7 +79,7 @@ after(async () => {
 });
 
 test('separate site pages are served and protected APIs enforce roles', async () => {
-  const [home, riderPage, cleanAdminPage, cleanRiderPage, adminData, databaseFile, jsonDatabaseFile] = await Promise.all([
+  const [home, riderPage, cleanAdminPage, cleanRiderPage, adminData, databaseFile, jsonDatabaseFile, pricing] = await Promise.all([
     fetch(`${baseUrl}/index.html`),
     fetch(`${baseUrl}/rider.html`),
     fetch(`${baseUrl}/admin`),
@@ -85,6 +87,7 @@ test('separate site pages are served and protected APIs enforce roles', async ()
     request('/api/admin/orders'),
     fetch(`${baseUrl}/data/ao-logistics.sqlite`),
     fetch(`${baseUrl}/data/users.json`),
+    request('/api/pricing'),
   ]);
   assert.equal(home.status, 200);
   assert.equal(riderPage.status, 200);
@@ -103,6 +106,8 @@ test('separate site pages are served and protected APIs enforce roles', async ()
   assert.equal(riderSession.result.rider, null);
   assert.equal(databaseFile.status, 404);
   assert.equal(jsonDatabaseFile.status, 404);
+  assert.equal(pricing.response.status, 200);
+  assert.deepEqual(pricing.result, { baseFeeNgn: 2500, ratePerKmNgn: 1000 });
 });
 
 test('favicon requests redirect to the branded SVG icon', async () => {
@@ -455,6 +460,26 @@ test('customer and rider workflows share orders, assignment, and notifications',
     ['Customer', 'Customer', 'Rider', 'Rider'],
   );
 
+  const orderWithoutDistance = await request('/api/customer/orders', {
+    method: 'POST',
+    cookie: customer.cookie,
+    body: {
+      item: 'Small box',
+      quantity: 1,
+      description: 'Missing distance case',
+      pickup: 'One Street',
+      delivery: 'Two Street',
+      pickupEmail: 'pickup@example.com',
+      deliveryEmail: 'delivery@example.com',
+      date: '2026-10-20',
+      phone: '555-0110',
+      notes: '',
+      photo: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+    },
+  });
+  assert.equal(orderWithoutDistance.response.status, 400);
+  assert.match(orderWithoutDistance.result.error, /distance/i);
+
   const order = await request('/api/customer/orders', {
     method: 'POST',
     cookie: customer.cookie,
@@ -464,21 +489,23 @@ test('customer and rider workflows share orders, assignment, and notifications',
       description: 'Fragile',
       pickup: 'One Street',
       delivery: 'Two Street',
+      deliveryDistanceKm: 2.4,
       pickupEmail: 'pickup@example.com',
       deliveryEmail: 'delivery@example.com',
       date: '2026-10-20',
       phone: '555-0110',
       notes: '',
       deliveryPriceNgn: 1,
-      deliveryDistanceKm: 1,
       photo: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
     },
   });
   assert.equal(order.response.status, 201);
   assert.equal(order.result.order.status, 'Received');
-  assert.equal(order.result.order.deliveryDistanceKm, null);
-  assert.equal(order.result.order.deliveryPriceNgn, null);
+  assert.equal(order.result.order.deliveryDistanceKm, 2.4);
+  assert.equal(order.result.order.deliveryPriceNgn, 5500);
+  assert.equal(order.result.order.deliveryPriceConfirmed, false);
   assert.equal(order.result.order.paymentStatus, 'unpaid');
+  assert.ok(emails.slice(-3).every(email => /Estimated delivery fee: NGN 5,500/.test(email.text)));
   assert.deepEqual(
     emails.slice(-3).map(email => email.to).sort(),
     ['admin2@example.com', 'admin@example.com', 'customer@example.com'],
@@ -496,7 +523,7 @@ test('customer and rider workflows share orders, assignment, and notifications',
     body: { status: 'Confirmed', riderId: registeredRider.result.rider.id },
   });
   assert.equal(confirmationWithoutFee.response.status, 400);
-  assert.match(confirmationWithoutFee.result.error, /set the delivery fee/i);
+  assert.match(confirmationWithoutFee.result.error, /save the final delivery fee/i);
   const quoteSaved = await request(`/api/admin/orders/${order.result.order.id}`, {
     method: 'PATCH',
     cookie: adminCookie,
@@ -504,12 +531,13 @@ test('customer and rider workflows share orders, assignment, and notifications',
       status: 'Received',
       riderId: '',
       deliveryPriceNgn: 5500,
-      deliveryDistanceKm: 3,
+      deliveryDistanceKm: 2.4,
     },
   });
   assert.equal(quoteSaved.response.status, 200);
   assert.equal(quoteSaved.result.order.deliveryPriceNgn, 5500);
-  assert.equal(quoteSaved.result.order.deliveryDistanceKm, 3);
+  assert.equal(quoteSaved.result.order.deliveryDistanceKm, 2.4);
+  assert.equal(quoteSaved.result.order.deliveryPriceConfirmed, true);
   const assignment = await request(`/api/admin/orders/${order.result.order.id}`, {
     method: 'PATCH',
     cookie: adminCookie,
@@ -518,7 +546,7 @@ test('customer and rider workflows share orders, assignment, and notifications',
   assert.equal(assignment.response.status, 200);
   assert.equal(assignment.result.order.riderName, 'Riley Rider');
   assert.equal(assignment.result.order.deliveryPriceNgn, 5500);
-  assert.equal(assignment.result.order.deliveryDistanceKm, 3);
+  assert.equal(assignment.result.order.deliveryDistanceKm, 2.4);
   const feeChangeAfterConfirmation = await request(`/api/admin/orders/${order.result.order.id}`, {
     method: 'PATCH',
     cookie: adminCookie,
@@ -752,6 +780,7 @@ test('customer and rider workflows share orders, assignment, and notifications',
       description: 'Order email outage case',
       pickup: 'Three Street',
       delivery: 'Four Street',
+      deliveryDistanceKm: 2,
       pickupEmail: 'pickup@example.com',
       deliveryEmail: 'delivery@example.com',
       date: '2026-10-20',

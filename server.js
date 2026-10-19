@@ -250,6 +250,31 @@ function formatNaira(amount) {
   return `NGN ${Number(amount).toLocaleString('en-NG')}`;
 }
 
+function deliveryPricing() {
+  const baseFeeNgn = process.env.DELIVERY_BASE_FEE_NGN === undefined
+    ? 2500
+    : Number(process.env.DELIVERY_BASE_FEE_NGN);
+  const ratePerKmNgn = process.env.DELIVERY_RATE_PER_KM_NGN === undefined
+    ? 1000
+    : Number(process.env.DELIVERY_RATE_PER_KM_NGN);
+  if (![baseFeeNgn, ratePerKmNgn].every(value => Number.isSafeInteger(value) && value >= 0)) {
+    throw requestError('Delivery estimate pricing is misconfigured. Contact A&M Logistics.', 503);
+  }
+  return { baseFeeNgn, ratePerKmNgn };
+}
+
+function estimateDeliveryFee(distanceKm) {
+  if (!Number.isFinite(distanceKm) || distanceKm <= 0 || distanceKm > 100_000) {
+    throw requestError('Enter an approximate route distance greater than 0 and no more than 100,000 km.');
+  }
+  const { baseFeeNgn, ratePerKmNgn } = deliveryPricing();
+  const estimatedFeeNgn = baseFeeNgn + Math.ceil(distanceKm) * ratePerKmNgn;
+  if (!Number.isSafeInteger(estimatedFeeNgn) || estimatedFeeNgn > 1_000_000_000) {
+    throw requestError('That route is too long to estimate. Contact A&M Logistics for a quote.');
+  }
+  return estimatedFeeNgn;
+}
+
 function cookieValue(request, name) {
   const cookieHeader = request.headers.cookie || '';
   const entry = cookieHeader.split(';').map(value => value.trim()).find(value => value.startsWith(`${name}=`));
@@ -396,6 +421,7 @@ async function publicOrder(database, order, { includeTransferReference = false }
     status: order.status,
     deliveryDistanceKm: order.delivery_distance_km ?? null,
     deliveryPriceNgn: order.delivery_price_ngn ?? null,
+    deliveryPriceConfirmed: Boolean(order.delivery_price_confirmed ?? (order.delivery_price_ngn != null)),
     deliveryBaseFeeNgn: order.delivery_base_fee_ngn ?? null,
     deliveryRatePerKmNgn: order.delivery_rate_per_km_ngn ?? null,
     paymentStatus: order.payment_status || null,
@@ -566,11 +592,11 @@ function createApp(database, {
 
   app.get('/favicon.ico', (request, response) => response.redirect(302, '/favicon.svg'));
 
-  app.get(['/admin/', '/rider/'], (request, response) => {
+  app.get(['/admin', '/admin/', '/rider', '/rider/'], (request, response) => {
     if (request.path.endsWith('/')) {
       return response.redirect(301, request.path.slice(0, -1));
     }
-    return response.sendFile(path.join(staticDirectory, request.path === '/admin' ? 'admin.html' : 'rider.html'));
+    return response.sendFile(request.path === '/admin' ? 'admin.html' : 'rider.html', { root: staticDirectory });
   });
   app.get(['/admin.html', '/rider.html'], (request, response) => {
     response.redirect(301, request.path === '/admin.html' ? '/admin' : '/rider');
@@ -707,6 +733,10 @@ function createApp(database, {
     const account = await database.find('users', user => user.id === request.auth.principalId);
     if (!account) return response.json({ user: null });
     response.json({ user: { id: account.id, email: account.email, name: account.name, phone: account.phone, registeredAt: account.registered_at } });
+  });
+
+  app.get('/api/pricing', (request, response) => {
+    response.json(deliveryPricing());
   });
 
   app.get('/api/auth/admin/me', requireAdmin, async (request, response) => {
@@ -853,6 +883,8 @@ function createApp(database, {
       }
       const phone = textField(request.body, 'phone', { max: 40 });
       const notes = textField(request.body, 'notes', { min: 0, max: 1200 });
+      const deliveryDistanceKm = Number(request.body.deliveryDistanceKm);
+      const deliveryPriceNgn = estimateDeliveryFee(deliveryDistanceKm);
       const { photo, type } = parsePhoto(request.body.photo);
       const id = crypto.randomUUID();
       const reference = `AO-${new Date().toISOString().slice(2, 10).replaceAll('-', '')}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
@@ -874,8 +906,9 @@ function createApp(database, {
         photo,
         photo_type: type,
         status: 'Received',
-        delivery_distance_km: null,
-        delivery_price_ngn: null,
+        delivery_distance_km: deliveryDistanceKm,
+        delivery_price_ngn: deliveryPriceNgn,
+        delivery_price_confirmed: false,
         payment_status: 'unpaid',
         transfer_reference: null,
         transfer_submitted_at: null,
@@ -901,7 +934,8 @@ function createApp(database, {
         `Item: ${quantity} × ${item}`,
         `Pickup: ${pickup}`,
         `Delivery: ${delivery}`,
-        'A&M Logistics will review the route and confirm the delivery fee before requesting payment.',
+        `Estimated delivery fee: ${formatNaira(deliveryPriceNgn)} based on approximately ${deliveryDistanceKm} km.`,
+        'A&M Logistics will review the route and confirm the final delivery fee before requesting payment.',
       ];
       const notificationWarning = await sendNotifications([
         sendEmail({
@@ -913,7 +947,8 @@ function createApp(database, {
             details.slice(0, 1).concat(
               `Pickup: ${pickup}`,
               `Delivery: ${delivery}`,
-              'A&M Logistics will review the route and confirm the delivery fee before requesting payment.',
+              `Estimated delivery fee: ${formatNaira(deliveryPriceNgn)} based on approximately ${deliveryDistanceKm} km.`,
+              'A&M Logistics will review the route and confirm the final delivery fee before requesting payment.',
             ),
           ),
         }),
@@ -1116,6 +1151,8 @@ function createApp(database, {
         }
         deliveryPriceNgn = requestedPrice;
       }
+      let deliveryPriceConfirmed = order.delivery_price_confirmed ?? (order.delivery_price_ngn != null);
+      if (Object.hasOwn(request.body, 'deliveryPriceNgn')) deliveryPriceConfirmed = true;
       if (Object.hasOwn(request.body, 'deliveryDistanceKm')) {
         const requestedDistance = request.body.deliveryDistanceKm === null || request.body.deliveryDistanceKm === ''
           ? null
@@ -1140,8 +1177,8 @@ function createApp(database, {
       if (status === 'Confirmed' && !riderId) {
         throw requestError('Assign an approved rider before confirming this delivery.');
       }
-      if (status === 'Confirmed' && deliveryPriceNgn === null) {
-        throw requestError('Set the delivery fee before confirming this order.');
+      if (status === 'Confirmed' && !deliveryPriceConfirmed) {
+        throw requestError('Review and save the final delivery fee before confirming this order.');
       }
       if (status === 'Confirmed') bankTransferDetails();
       if (status === 'Collected' && !order.pickup_verified_at) {
@@ -1161,6 +1198,7 @@ function createApp(database, {
         status,
         rider_id: riderId,
         delivery_price_ngn: deliveryPriceNgn,
+        delivery_price_confirmed: deliveryPriceConfirmed,
         delivery_distance_km: deliveryDistanceKm,
         updated_at: updatedAt,
         delivered_at: deliveredAt,
