@@ -281,8 +281,21 @@ function deliveryPricing() {
 
 function createDeliveryRouteCalculator(fetchImpl = globalThis.fetch) {
   const cache = new Map();
+  const geocodeCache = new Map();
   let geocodingQueue = Promise.resolve();
   let lastGeocodingRequestAt = 0;
+
+  function retryDelayMs(response, attempt, rateLimited = false) {
+    const retryAfter = response.headers.get('retry-after');
+    const retryAfterSeconds = Number(retryAfter);
+    const retryAfterDate = Date.parse(retryAfter || '');
+    const providerDelay = retryAfter && Number.isFinite(retryAfterSeconds)
+      ? retryAfterSeconds * 1000
+      : Number.isFinite(retryAfterDate)
+        ? retryAfterDate - Date.now()
+        : 0;
+    return Math.max(rateLimited ? 10_000 : 1000 * (attempt + 1), providerDelay, 1000);
+  }
 
   async function fetchRouteProvider(url, options, providerName) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -306,11 +319,7 @@ function createDeliveryRouteCalculator(fetchImpl = globalThis.fetch) {
 
       console.error(`${providerName} returned HTTP ${response.status}.`);
       if (attempt === 0 && (response.status === 429 || response.status >= 500)) {
-        const retryAfterSeconds = Number(response.headers.get('retry-after'));
-        const retryDelay = Number.isFinite(retryAfterSeconds)
-          ? Math.min(Math.max(retryAfterSeconds * 1000, 1000), 5000)
-          : 1000;
-        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        await new Promise(resolve => setTimeout(resolve, retryDelayMs(response, attempt, response.status === 429)));
         continue;
       }
       return response;
@@ -320,6 +329,11 @@ function createDeliveryRouteCalculator(fetchImpl = globalThis.fetch) {
 
   async function geocode(address) {
     const search = async () => {
+      const cacheKey = address.trim().toLowerCase();
+      const cached = geocodeCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) return cached.location;
+      if (cached) geocodeCache.delete(cacheKey);
+
       const url = new URL('https://nominatim.openstreetmap.org/search');
       url.search = new URLSearchParams({
         q: `${address}, Nigeria`,
@@ -327,7 +341,7 @@ function createDeliveryRouteCalculator(fetchImpl = globalThis.fetch) {
         format: 'jsonv2',
         limit: '1',
       });
-      const waitMs = Math.max(0, 1000 - (Date.now() - lastGeocodingRequestAt));
+      const waitMs = Math.max(0, 1100 - (Date.now() - lastGeocodingRequestAt));
       if (waitMs) await new Promise(resolve => setTimeout(resolve, waitMs));
       let response = await fetchRouteProvider(url, {
         headers: { 'User-Agent': 'A&M Logistics delivery distance calculator (https://a-mlogistic.onrender.com)' },
@@ -337,6 +351,9 @@ function createDeliveryRouteCalculator(fetchImpl = globalThis.fetch) {
         throw requestError('The address search service is unavailable right now. Please try again shortly.', 502);
       }
       if (!response.ok) {
+        if (response.status === 429) {
+          throw requestError('Address lookup is being rate-limited. Please wait a minute before trying the estimate again.', 503);
+        }
         throw requestError('The address search service is temporarily unavailable. Please try again shortly.', 502);
       }
       let matches;
@@ -352,11 +369,17 @@ function createDeliveryRouteCalculator(fetchImpl = globalThis.fetch) {
         || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
         throw requestError('We could not find one of those addresses. Enter a more complete street, city, and state address.', 422);
       }
-      return {
+      const location = {
         latitude,
         longitude,
         label: String(match.display_name || address),
       };
+      for (const [key, entry] of geocodeCache) {
+        if (entry.expiresAt <= Date.now()) geocodeCache.delete(key);
+      }
+      if (geocodeCache.size >= 1000) geocodeCache.delete(geocodeCache.keys().next().value);
+      geocodeCache.set(cacheKey, { location, expiresAt: Date.now() + 24 * 60 * 60 * 1000 });
+      return location;
     };
 
     const result = geocodingQueue.then(search, search);

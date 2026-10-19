@@ -149,6 +149,10 @@ test('OpenStreetMap geocoding and OSRM driving distances are cached and converte
   assert.equal(requests.length, 3);
   assert.match(requests[0], /countrycodes=ng/);
   assert.match(requests[2], /router\.project-osrm\.org\/route\/v1\/driving/);
+
+  await calculateRoute('Ibadan', 'Abeokuta');
+  assert.equal(requests.filter(url => url.includes('nominatim.openstreetmap.org')).length, 3);
+  assert.equal(requests.filter(url => url.includes('router.project-osrm.org')).length, 2);
 });
 
 test('route estimates retry temporary provider failures and log upstream status', async () => {
