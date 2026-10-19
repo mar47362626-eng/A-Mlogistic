@@ -1,5 +1,8 @@
 const assert = require('node:assert/strict');
 const { after, before, test } = require('node:test');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
 const nodemailer = require('nodemailer');
 const { createDatabase } = require('./db');
 const {
@@ -121,6 +124,21 @@ test('separate site pages are served and protected APIs enforce roles', async ()
     body: { pickup: 'Ibadan', delivery: 'Lagos' },
   });
   assert.equal(anonymousRouteEstimate.response.status, 401);
+});
+
+test('Netlify proxies API requests through its own origin to keep auth cookies first-party', () => {
+  const clientSource = fs.readFileSync(path.join(__dirname, 'api-client.js'), 'utf8');
+  const netlifyConfig = fs.readFileSync(path.join(__dirname, 'netlify.toml'), 'utf8');
+  assert.match(netlifyConfig, /from\s*=\s*"\/api\/\*"/);
+  assert.match(netlifyConfig, /to\s*=\s*"https:\/\/a-mlogistic\.onrender\.com\/api\/:splat"/);
+
+  const netlifyWindow = { location: new URL('https://a-mlogistic.netlify.app') };
+  vm.runInNewContext(clientSource, { window: netlifyWindow, fetch: () => {} });
+  assert.equal(netlifyWindow.api.url('/api/auth/me'), 'https://a-mlogistic.netlify.app/api/auth/me');
+
+  const pagesWindow = { location: new URL('https://mar47362626-eng.github.io') };
+  vm.runInNewContext(clientSource, { window: pagesWindow, fetch: () => {} });
+  assert.equal(pagesWindow.api.url('/api/auth/me'), 'https://a-mlogistic.onrender.com/api/auth/me');
 });
 
 test('OpenStreetMap geocoding and OSRM driving distances are cached and converted to kilometres', async () => {

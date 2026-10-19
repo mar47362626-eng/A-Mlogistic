@@ -1,4 +1,7 @@
-window.API_BASE_URL = window.API_BASE_URL || 'https://a-mlogistic.onrender.com';
+const isNetlifySite = window.location.hostname.endsWith('.netlify.app');
+window.API_BASE_URL = isNetlifySite
+  ? window.location.origin
+  : window.API_BASE_URL || 'https://a-mlogistic.onrender.com';
 const apiBaseUrl = window.API_BASE_URL.replace(/\/+$/, '');
 
 window.api = {
