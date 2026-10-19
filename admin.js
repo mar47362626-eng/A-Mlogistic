@@ -205,9 +205,15 @@ function renderDetail(order, message = '', messageState = 'success') {
       formatNgn(order.deliveryPriceNgn),
     );
     addDetailField(paymentFields, 'Payment status', order.paymentStatus || 'unpaid');
+    if (order.paymentSubmittedAmountNgn != null) {
+      addDetailField(paymentFields, 'Customer says they transferred', formatNgn(order.paymentSubmittedAmountNgn));
+    }
     if (order.riderEarningsNgn != null) addDetailField(paymentFields, 'Rider earnings', formatNgn(order.riderEarningsNgn));
     if (order.transferReference) addDetailField(paymentFields, 'Customer transaction reference', order.transferReference);
     payment.append(paymentFields);
+    if (order.paymentSubmittedAmountNgn != null && order.paymentSubmittedAmountNgn !== order.deliveryPriceNgn) {
+      addDetailCopy(payment, 'Amount review', 'The reported transfer amount differs from the current delivery fee. Check the bank statement and resolve the difference with the customer before proceeding.');
+    }
   } else {
     addDetailCopy(payment, 'Quote status', 'Set the delivery fee before confirming this order.');
   }

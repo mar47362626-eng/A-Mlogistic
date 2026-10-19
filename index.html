@@ -102,7 +102,7 @@
             <div class="feedback-banner" id="account-welcome-notice" role="status" aria-live="polite" hidden></div>
             <div class="dashboard-heading"><div><p class="eyebrow">YOUR A&M ACCOUNT</p><h3>Good to see you, <span id="customer-name"></span></h3></div><div class="dashboard-actions"><button class="button button-dark" id="show-order-form" type="button" aria-expanded="false" aria-controls="order-form">Place an order</button><button class="sign-out" id="sign-out" type="button">Log out</button></div></div>
             <form class="portal-form order-form" id="order-form" hidden>
-              <div><h3>Start a delivery order</h3><p class="form-lead">Tell us what to collect and where it needs to go. A&M Logistics will review the route and confirm your delivery fee before payment.</p></div>
+              <div><h3>Start a delivery order</h3><p class="form-lead">Calculate the route, transfer the estimated fee to the account below, then enter your transaction reference and submit your request. A&M will verify payment before dispatch.</p></div>
               <div class="form-row">
                 <label>What are we collecting?<input name="item" required placeholder="Box, chair, equipment..."></label>
                 <label>Number of items<input name="quantity" type="number" min="1" max="100" value="1" required></label>
@@ -121,6 +121,13 @@
                 <small id="route-distance">The website calculates driving distance from your addresses. Address lookup is sent to OpenStreetMap; driving routes use OSRM.</small>
                 <small><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a></small>
               </div>
+              <section class="bank-transfer-panel" aria-labelledby="bank-transfer-title">
+                <h4 id="bank-transfer-title">Pay A&amp;M Logistics</h4>
+                <div id="order-bank-details" aria-live="polite"><p>Loading the bank account saved by A&amp;M...</p></div>
+                <small>Pay the estimated fee shown above. A&amp;M will review the route and contact you if the final fee needs to change. Use your name or phone number as the transfer narration.</small>
+              </section>
+              <label>Bank transaction reference<input name="transferReference" required minlength="3" maxlength="100" autocomplete="off" placeholder="Enter the reference shown by your bank"></label>
+              <label class="check-label"><input name="paidConfirmation" type="checkbox" required><span>I have completed the bank transfer to the A&amp;M account shown above.</span></label>
               <div class="form-row">
                 <label>Pickup contact email<input name="pickupEmail" type="email" autocomplete="email" required placeholder="person at pickup"></label>
                 <label>Delivery contact email<input name="deliveryEmail" type="email" autocomplete="email" required placeholder="person receiving the item"></label>
@@ -130,7 +137,7 @@
                 <label>Contact phone<input name="phone" type="tel" autocomplete="tel" required></label>
               </div>
               <label>Anything else we should know? <span class="optional">OPTIONAL</span><textarea name="notes" rows="2" placeholder="Access details, preferred time, or special instructions"></textarea></label>
-              <button class="button button-lime" type="submit">Save delivery request <span aria-hidden="true">↗</span></button>
+              <button class="button button-lime" type="submit">I have paid — submit request <span aria-hidden="true">↗</span></button>
               <p class="portal-status" id="order-status" role="status" aria-live="polite"></p>
             </form>
             <div class="order-history"><div class="history-heading"><h3>Your saved requests</h3><span id="order-count">0 requests</span></div><div id="order-list" class="order-list"><p class="empty-orders">Your delivery requests will appear here.</p></div></div>

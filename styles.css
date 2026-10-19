@@ -155,6 +155,11 @@ h2 { font: 600 43px/1.15 var(--display); letter-spacing: -1.1px; }
 .fee-estimate > span { color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .7px; }
 .fee-estimate strong { font: 700 20px var(--display); }
 .fee-estimate small { color: var(--muted); font-size: 10px; line-height: 1.5; }
+.bank-transfer-panel { display: grid; gap: 8px; padding: 15px; border: 1px solid #d7ddc8; background: #f7f7f1; }
+.bank-transfer-panel h4 { margin: 0; font: 700 14px var(--display); }
+.bank-transfer-panel p { margin: 0; font-size: 12px; }
+.bank-transfer-panel small { color: var(--muted); font-size: 10px; line-height: 1.5; }
+.bank-transfer-panel .bank-transfer-error { color: #a13d2b; }
 .portal-form label { display: flex; flex-direction: column; gap: 7px; font-size: 11px; font-weight: 700; }
 .portal-form input:not([type="checkbox"]):not([type="file"]), .portal-form select, .portal-form textarea { width: 100%; border: 0; border-bottom: 1px solid #bfc3b5; background: transparent; padding: 10px 0; border-radius: 0; outline: none; color: var(--ink); font-size: 12px; resize: vertical; }
 .portal-form input:focus, .portal-form textarea:focus { border-color: #70882f; box-shadow: 0 1px #70882f; }

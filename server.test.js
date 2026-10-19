@@ -496,6 +496,13 @@ test('customer and rider workflows share orders, assignment, and notifications',
   assert.match(emails.at(-1).html, /<table role="presentation"/);
   assert.match(emails.at(-1).html, /background:#263b32/);
   assert.match(emails.at(-1).text, /A&M LOGISTICS[\s\S]*Welcome to A&M Logistics/);
+  const customerPaymentAccount = await request('/api/customer/payment-account', { cookie: customer.cookie });
+  assert.equal(customerPaymentAccount.response.status, 200);
+  assert.deepEqual(customerPaymentAccount.result.bank, {
+    bankName: 'A&M Admin Bank',
+    accountName: 'A&M Logistics',
+    accountNumber: '0123456789',
+  });
   const signedOutCustomer = await request('/api/auth/logout', {
     method: 'POST',
     cookie: customer.cookie,
@@ -551,6 +558,14 @@ test('customer and rider workflows share orders, assignment, and notifications',
   assert.equal(estimateWithoutAddress.response.status, 400);
   assert.match(estimateWithoutAddress.result.error, /delivery/i);
 
+  const orderWithoutPaidConfirmation = await request('/api/customer/orders', {
+    method: 'POST',
+    cookie: customer.cookie,
+    body: { paidConfirmation: false },
+  });
+  assert.equal(orderWithoutPaidConfirmation.response.status, 400);
+  assert.match(orderWithoutPaidConfirmation.result.error, /confirm that you have completed/i);
+
   const order = await request('/api/customer/orders', {
     method: 'POST',
     cookie: customer.cookie,
@@ -565,6 +580,8 @@ test('customer and rider workflows share orders, assignment, and notifications',
       date: '2026-10-20',
       phone: '555-0110',
       notes: '',
+      transferReference: 'BANK-TXN-2026-0042',
+      paidConfirmation: true,
       deliveryPriceNgn: 1,
       deliveryDistanceKm: 1,
       photo: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
@@ -575,7 +592,9 @@ test('customer and rider workflows share orders, assignment, and notifications',
   assert.equal(order.result.order.deliveryDistanceKm, 2.4);
   assert.equal(order.result.order.deliveryPriceNgn, 5500);
   assert.equal(order.result.order.deliveryPriceConfirmed, false);
-  assert.equal(order.result.order.paymentStatus, 'unpaid');
+  assert.equal(order.result.order.paymentStatus, 'proof_submitted');
+  assert.equal(order.result.order.transferReference, 'BANK-TXN-2026-0042');
+  assert.equal(order.result.order.paymentSubmittedAmountNgn, 5500);
   assert.equal(order.result.order.riderEarningsNgn, null);
   assert.ok(emails.slice(-3).every(email => /Estimated delivery fee: NGN 5,500/.test(email.text)));
   assert.deepEqual(
@@ -610,18 +629,6 @@ test('customer and rider workflows share orders, assignment, and notifications',
   assert.equal(quoteSaved.result.order.deliveryPriceNgn, 5500);
   assert.equal(quoteSaved.result.order.deliveryDistanceKm, 2.4);
   assert.equal(quoteSaved.result.order.deliveryPriceConfirmed, true);
-  const preConfirmationInstructions = await request(
-    `/api/customer/orders/${order.result.order.id}/payment-instructions`,
-    { cookie: customer.cookie },
-  );
-  assert.equal(preConfirmationInstructions.response.status, 200);
-  assert.equal(preConfirmationInstructions.result.amountNgn, 5500);
-  assert.equal(preConfirmationInstructions.result.bank.accountNumber, '0123456789');
-  const paymentCannotBeVerifiedBeforeReference = await request(`/api/admin/orders/${order.result.order.id}/payment`, {
-    method: 'PATCH',
-    cookie: adminCookie,
-  });
-  assert.equal(paymentCannotBeVerifiedBeforeReference.response.status, 409);
   const missingPaidConfirmation = await request(
     `/api/customer/orders/${order.result.order.id}/payment-reference`,
     {
@@ -632,17 +639,20 @@ test('customer and rider workflows share orders, assignment, and notifications',
   );
   assert.equal(missingPaidConfirmation.response.status, 400);
   assert.match(missingPaidConfirmation.result.error, /confirm that you have completed/i);
-  const preConfirmationPayment = await request(
-    `/api/customer/orders/${order.result.order.id}/payment-reference`,
-    {
-      method: 'POST',
-      cookie: customer.cookie,
-      body: { transferReference: 'BANK-TXN-2026-0042', paidConfirmation: true },
-    },
+  const preConfirmationInstructions = await request(
+    `/api/customer/orders/${order.result.order.id}/payment-instructions`,
+    { cookie: customer.cookie },
   );
-  assert.equal(preConfirmationPayment.response.status, 200);
-  assert.equal(preConfirmationPayment.result.order.status, 'Received');
-  assert.equal(preConfirmationPayment.result.order.paymentStatus, 'proof_submitted');
+  assert.equal(preConfirmationInstructions.response.status, 200);
+  assert.equal(preConfirmationInstructions.result.amountNgn, 5500);
+  assert.equal(preConfirmationInstructions.result.bank.accountNumber, '0123456789');
+  const paymentVerified = await request(`/api/admin/orders/${order.result.order.id}/payment`, {
+    method: 'PATCH',
+    cookie: adminCookie,
+  });
+  assert.equal(paymentVerified.response.status, 200);
+  assert.equal(paymentVerified.result.order.status, 'Received');
+  assert.equal(paymentVerified.result.order.paymentStatus, 'paid');
   const assignment = await request(`/api/admin/orders/${order.result.order.id}`, {
     method: 'PATCH',
     cookie: adminCookie,
@@ -665,6 +675,9 @@ test('customer and rider workflows share orders, assignment, and notifications',
   assert.equal(feeChangeAfterConfirmation.response.status, 409);
   assert.ok(emails.some(email => email.to === 'customer@example.com' && /confirmed/i.test(email.subject)));
   assert.ok(emails.some(email => email.to === 'customer@example.com' && /5,?500/.test(email.text)));
+  const confirmationEmail = emails.find(email => email.to === 'customer@example.com' && /delivery is confirmed/i.test(email.subject));
+  assert.match(confirmationEmail.text, /already been verified/i);
+  assert.doesNotMatch(confirmationEmail.text, /submit your bank transaction reference/i);
   assert.equal(emails.at(-1).to, 'rider@example.com');
   assert.match(emails.at(-1).subject, /assigned/i);
   assert.equal(emails.at(-1).inlineImage.name, `package-${order.result.order.reference}.png`);
@@ -703,24 +716,13 @@ test('customer and rider workflows share orders, assignment, and notifications',
     { cookie: riderLogin.cookie },
   );
   assert.equal(riderCannotViewInstructions.response.status, 403);
-  const pickupBeforePayment = await request(`/api/rider/orders/${order.result.order.id}/handoff-code`, {
-    method: 'POST',
-    cookie: riderLogin.cookie,
-    body: { phase: 'pickup' },
-  });
-  assert.equal(pickupBeforePayment.response.status, 409);
-  assert.ok(emails.some(email => email.to === 'admin@example.com' && /payment reference submitted/i.test(email.subject)));
+  assert.ok(emails.some(email => email.to === 'admin@example.com' && /new delivery request/i.test(email.subject)
+    && /BANK-TXN-2026-0042/.test(email.text)));
   const adminOrdersWithPaymentReference = await request('/api/admin/orders', { cookie: adminCookie });
   assert.equal(
     adminOrdersWithPaymentReference.result.orders.find(candidate => candidate.id === order.result.order.id).transferReference,
     'BANK-TXN-2026-0042',
   );
-  const paymentVerified = await request(`/api/admin/orders/${order.result.order.id}/payment`, {
-    method: 'PATCH',
-    cookie: adminCookie,
-  });
-  assert.equal(paymentVerified.response.status, 200);
-  assert.equal(paymentVerified.result.order.paymentStatus, 'paid');
   assert.ok(emails.some(email => email.to === 'customer@example.com' && /payment confirmed/i.test(email.subject)));
   const riderOrdersAfterPayment = await request('/api/rider/deliveries', { cookie: riderLogin.cookie });
   const riderPaidOrder = riderOrdersAfterPayment.result.orders.find(candidate => candidate.id === order.result.order.id);
@@ -883,6 +885,8 @@ test('customer and rider workflows share orders, assignment, and notifications',
       date: '2026-10-20',
       phone: '555-0110',
       notes: '',
+      transferReference: 'OUTAGE-TXN-2026',
+      paidConfirmation: true,
       photo: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
     },
   });

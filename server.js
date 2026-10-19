@@ -560,6 +560,7 @@ async function publicOrder(database, order, { includeTransferReference = false }
     deliveryRatePerKmNgn: order.delivery_rate_per_km_ngn ?? null,
     riderEarningsNgn: order.rider_earnings_ngn ?? null,
     paymentStatus: order.payment_status || null,
+    paymentSubmittedAmountNgn: order.transfer_amount_ngn ?? null,
     ...(includeTransferReference ? { transferReference: order.transfer_reference || '' } : {}),
     pickupVerified: Boolean(order.pickup_verified_at),
     deliveryVerified: Boolean(order.delivery_verified_at),
@@ -607,15 +608,23 @@ async function orderStatusEmailTasks(database, order, status, sendEmail) {
     `Delivery: ${order.delivery}`,
   ];
   if (status === 'Confirmed' && order.delivery_price_ngn != null) {
-    const bank = await bankTransferDetails(database);
     details.push(
       ...(order.delivery_distance_km != null ? [`Approximate route distance: ${order.delivery_distance_km} km.`] : []),
       `Delivery fee confirmed by A&M: ${formatNaira(order.delivery_price_ngn)}.`,
-      `Bank: ${bank.bankName}`,
-      `Account name: ${bank.accountName}`,
-      `Account number: ${bank.accountNumber}`,
-      `Use ${order.reference} as the transfer narration/reference, then submit your bank transaction reference in your A&M account.`,
     );
+    if (order.payment_status === 'paid') {
+      details.push('Your bank transfer has already been verified. No further payment action is needed.');
+    } else if (order.payment_status === 'proof_submitted') {
+      details.push('A&M has received your transfer reference and will verify the payment before pickup. Please do not pay again.');
+    } else {
+      const bank = await bankTransferDetails(database);
+      details.push(
+        `Bank: ${bank.bankName}`,
+        `Account name: ${bank.accountName}`,
+        `Account number: ${bank.accountNumber}`,
+        `Use ${order.reference} as the transfer narration/reference, then submit your bank transaction reference in your A&M account.`,
+      );
+    }
   }
   const orderContent = orderEmailContent(order, update.title, details);
   const tasks = [sendEmail({
@@ -1020,8 +1029,17 @@ function createApp(database, {
     response.json({ orders: await Promise.all(orders) });
   });
 
+  app.get('/api/customer/payment-account', requireCustomer, async (request, response) => {
+    response.json({ bank: await bankTransferDetails(database) });
+  });
+
   app.post('/api/customer/orders', requireCustomer, async (request, response, next) => {
     try {
+      if (request.body.paidConfirmation !== true) {
+        throw requestError('Confirm that you have completed the bank transfer before submitting your delivery request.');
+      }
+      const transferReference = textField(request.body, 'transferReference', { min: 3, max: 100 });
+      const bank = await bankTransferDetails(database);
       const item = textField(request.body, 'item', { max: 160 });
       const quantity = Number(request.body.quantity);
       if (!Number.isInteger(quantity) || quantity < 1 || quantity > 100) throw requestError('Quantity must be between 1 and 100.');
@@ -1069,9 +1087,11 @@ function createApp(database, {
         delivery_distance_km: deliveryDistanceKm,
         delivery_price_ngn: deliveryPriceNgn,
         delivery_price_confirmed: false,
-        payment_status: 'unpaid',
-        transfer_reference: null,
-        transfer_submitted_at: null,
+        payment_status: 'proof_submitted',
+        transfer_reference: transferReference,
+        transfer_amount_ngn: deliveryPriceNgn,
+        transfer_submitted_at: createdAt,
+        paid_confirmed_at: createdAt,
         payment_verified_at: null,
         rider_id: null,
         created_at: createdAt,
@@ -1095,7 +1115,9 @@ function createApp(database, {
         `Pickup: ${pickup}`,
         `Delivery: ${delivery}`,
         `Estimated delivery fee: ${formatNaira(deliveryPriceNgn)} based on approximately ${deliveryDistanceKm} km.`,
-        'A&M Logistics will review the route and confirm the final delivery fee before requesting payment.',
+        `Customer transaction reference: ${transferReference}`,
+        `Bank: ${bank.bankName}; account name: ${bank.accountName}; account number: ${bank.accountNumber}.`,
+        'The customer says the transfer is complete. Verify the transaction in the bank account before confirming payment.',
       ];
       const notificationWarning = await sendNotifications([
         sendEmail({
@@ -1108,7 +1130,7 @@ function createApp(database, {
               `Pickup: ${pickup}`,
               `Delivery: ${delivery}`,
               `Estimated delivery fee: ${formatNaira(deliveryPriceNgn)} based on approximately ${deliveryDistanceKm} km.`,
-              'A&M Logistics will review the route and confirm the final delivery fee before requesting payment.',
+              `Transfer reference submitted: ${transferReference}. A&M will verify the payment before dispatch.`,
             ),
           ),
         }),
@@ -1119,7 +1141,7 @@ function createApp(database, {
         })),
       ], 'New delivery request');
       response.status(201).json({
-        order: await publicOrder(database, order),
+        order: await publicOrder(database, order, { includeTransferReference: true }),
         ...(notificationWarning ? { warning: 'Your request was saved, but one or more order emails could not be sent.' } : {}),
       });
     } catch (error) {
@@ -1162,6 +1184,7 @@ function createApp(database, {
         ...record,
         payment_status: 'proof_submitted',
         transfer_reference: transferReference,
+        transfer_amount_ngn: order.delivery_price_ngn,
         transfer_submitted_at: Date.now(),
         paid_confirmed_at: Date.now(),
         updated_at: Date.now(),
@@ -1174,7 +1197,7 @@ function createApp(database, {
         ...orderEmailContent(order, 'Customer submitted a bank transfer reference', [
           `Customer: ${customer?.name || customer?.email || 'Customer'} (${customer?.email || ''})`,
           `Order: ${order.reference}`,
-          `Amount due: ${formatNaira(order.delivery_price_ngn)}.`,
+          `Amount customer reported paying: ${formatNaira(order.transfer_amount_ngn ?? order.delivery_price_ngn)}.`,
           `Customer transaction reference: ${transferReference}`,
           'Review the transfer in the business bank account, then verify payment in the admin order details.',
         ]),
@@ -1442,7 +1465,7 @@ function createApp(database, {
     try {
       const order = await database.find('orders', record => record.id === request.params.id);
       if (!order) throw requestError('Order not found.', 404);
-      if (order.status === 'Cancelled' || order.delivery_price_ngn == null || !order.delivery_price_confirmed) {
+      if (order.status === 'Cancelled' || order.delivery_price_ngn == null) {
         throw requestError('Only a priced, non-cancelled order can be verified for payment.', 409);
       }
       if (order.payment_status === 'paid') throw requestError('This order is already marked as paid.', 409);
@@ -1462,7 +1485,7 @@ function createApp(database, {
         subject: `Payment confirmed · ${order.reference}`,
         ...orderEmailContent(order, 'Your payment has been confirmed', [
           `Payment for delivery ${order.reference} has been verified by A&M Logistics.`,
-          `Amount received: ${formatNaira(order.delivery_price_ngn)}.`,
+          `Amount received: ${formatNaira(order.transfer_amount_ngn ?? order.delivery_price_ngn)}.`,
           'Your assigned rider can now arrange collection. We will keep you updated as the delivery progresses.',
         ]),
       })] : [], 'Payment confirmation');

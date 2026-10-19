@@ -5,6 +5,7 @@ const dashboard = document.querySelector('#customer-dashboard');
 let currentUser = null;
 let selectedPhotoUrl = '';
 let calculatedRoute = null;
+let orderBankAvailable = false;
 const pickupAddressInput = document.querySelector('#order-form [name="pickup"]');
 const deliveryAddressInput = document.querySelector('#order-form [name="delivery"]');
 const deliveryPricePreview = document.querySelector('#delivery-price-preview');
@@ -102,6 +103,35 @@ async function loadOrders() {
 
 function formatNgn(amount) {
   return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(amount);
+}
+
+async function loadOrderBankDetails() {
+  const panel = document.querySelector('#order-bank-details');
+  orderBankAvailable = false;
+  panel.replaceChildren();
+  const loading = document.createElement('p');
+  loading.textContent = 'Loading the bank account saved by A&M...';
+  panel.append(loading);
+  try {
+    const { bank } = await api.request('/api/customer/payment-account');
+    [
+      `Bank: ${bank.bankName}`,
+      `Account name: ${bank.accountName}`,
+      `Account number: ${bank.accountNumber}`,
+    ].forEach(line => {
+      const detail = document.createElement('p');
+      detail.textContent = line;
+      panel.append(detail);
+    });
+    orderBankAvailable = true;
+    return true;
+  } catch (error) {
+    const message = document.createElement('p');
+    message.className = 'bank-transfer-error';
+    message.textContent = error.message;
+    panel.replaceChildren(message);
+    return false;
+  }
 }
 
 function invalidateCalculatedRoute() {
@@ -317,7 +347,7 @@ async function showDashboard() {
   orderForm.elements.date.min = new Date(today.getTime() - today.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   showMessage('#order-status', '');
   try {
-    await Promise.all([renderOrders(), renderCustomerNotifications()]);
+    await Promise.all([renderOrders(), renderCustomerNotifications(), loadOrderBankDetails()]);
   } catch {
     showMessage('#order-status', 'We could not load your account details. Refresh the page to try again.');
   }
@@ -327,13 +357,16 @@ document.querySelectorAll('.portal-tab').forEach(tab => {
   tab.addEventListener('click', () => setAuthView(tab.dataset.authView));
 });
 
-document.querySelector('#show-order-form').addEventListener('click', event => {
+document.querySelector('#show-order-form').addEventListener('click', async event => {
   const button = event.currentTarget;
   const orderForm = document.querySelector('#order-form');
   orderForm.hidden = !orderForm.hidden;
   button.setAttribute('aria-expanded', String(!orderForm.hidden));
   button.textContent = orderForm.hidden ? 'Place an order' : 'Close order form';
-  if (!orderForm.hidden) orderForm.querySelector('input[name="item"]').focus();
+  if (!orderForm.hidden) {
+    await loadOrderBankDetails();
+    orderForm.querySelector('input[name="item"]').focus();
+  }
 });
 
 async function calculateDeliveryRoute() {
@@ -360,7 +393,7 @@ async function calculateDeliveryRoute() {
     }
     calculatedRoute = { pickup, delivery };
     deliveryPricePreview.textContent = formatNgn(estimate.estimatedFeeNgn);
-    routeDistance.textContent = `Driving distance: ${estimate.distanceKm} km · ${estimate.pickupLabel} → ${estimate.deliveryLabel}. A&M will review the route and confirm the final fee before payment.`;
+    routeDistance.textContent = `Driving distance: ${estimate.distanceKm} km · ${estimate.pickupLabel} → ${estimate.deliveryLabel}. Pay this estimate; A&M will review the final fee after receiving your request.`;
   } catch (error) {
     calculatedRoute = null;
     deliveryPricePreview.textContent = 'We could not calculate this route.';
@@ -478,14 +511,19 @@ document.querySelector('#order-form').addEventListener('submit', async event => 
   const values = new FormData(form);
   const photo = photoInput.files[0];
   if (!photo || !['image/jpeg', 'image/png', 'image/webp'].includes(photo.type) || photo.size > 5 * 1024 * 1024) {
-    showMessage('#order-status', 'Add a JPG, PNG, or WebP item photo under 5 MB before saving your request.');
+    showMessage('#order-status', 'Add a JPG, PNG, or WebP item photo under 5 MB before submitting your request.');
     return;
   }
   if (!calculatedRoute
     || calculatedRoute.pickup !== pickupAddressInput.value.trim()
     || calculatedRoute.delivery !== deliveryAddressInput.value.trim()) {
-    showMessage('#order-status', 'Calculate the route and estimated fee before saving your request.');
+    showMessage('#order-status', 'Calculate the route and estimated fee before submitting your request.');
     calculateRouteButton.focus();
+    return;
+  }
+  if (!orderBankAvailable) {
+    showMessage('#order-status', 'Load A&M’s saved bank details before submitting your payment and delivery request.');
+    await loadOrderBankDetails();
     return;
   }
   const submit = form.querySelector('[type="submit"]');
@@ -504,6 +542,8 @@ document.querySelector('#order-form').addEventListener('submit', async event => 
         date: values.get('date'),
         phone: values.get('phone'),
         notes: values.get('notes'),
+        transferReference: values.get('transferReference'),
+        paidConfirmation: values.get('paidConfirmation') === 'on',
         photo: await fileAsDataUrl(photo),
       }),
     });
@@ -520,8 +560,8 @@ document.querySelector('#order-form').addEventListener('submit', async event => 
     showMessage(
       '#order-confirmation-message',
       result.warning
-        ? `Request ${result.order.reference} was saved, but one or more emails could not be sent. View its status under My account.`
-        : `Request ${result.order.reference} was sent to A&M. View its status under My account.`,
+          ? `Request ${result.order.reference} and payment reference were saved, but one or more emails could not be sent. A&M can review the payment in the admin orders.`
+          : `Request ${result.order.reference} and your payment reference were sent to A&M. Payment is awaiting verification.`,
     );
     document.querySelector('#order-confirmation').hidden = false;
     closeAuthScreen();
