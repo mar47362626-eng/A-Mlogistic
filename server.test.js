@@ -610,6 +610,39 @@ test('customer and rider workflows share orders, assignment, and notifications',
   assert.equal(quoteSaved.result.order.deliveryPriceNgn, 5500);
   assert.equal(quoteSaved.result.order.deliveryDistanceKm, 2.4);
   assert.equal(quoteSaved.result.order.deliveryPriceConfirmed, true);
+  const preConfirmationInstructions = await request(
+    `/api/customer/orders/${order.result.order.id}/payment-instructions`,
+    { cookie: customer.cookie },
+  );
+  assert.equal(preConfirmationInstructions.response.status, 200);
+  assert.equal(preConfirmationInstructions.result.amountNgn, 5500);
+  assert.equal(preConfirmationInstructions.result.bank.accountNumber, '0123456789');
+  const paymentCannotBeVerifiedBeforeReference = await request(`/api/admin/orders/${order.result.order.id}/payment`, {
+    method: 'PATCH',
+    cookie: adminCookie,
+  });
+  assert.equal(paymentCannotBeVerifiedBeforeReference.response.status, 409);
+  const missingPaidConfirmation = await request(
+    `/api/customer/orders/${order.result.order.id}/payment-reference`,
+    {
+      method: 'POST',
+      cookie: customer.cookie,
+      body: { transferReference: 'BANK-TXN-2026-0042' },
+    },
+  );
+  assert.equal(missingPaidConfirmation.response.status, 400);
+  assert.match(missingPaidConfirmation.result.error, /confirm that you have completed/i);
+  const preConfirmationPayment = await request(
+    `/api/customer/orders/${order.result.order.id}/payment-reference`,
+    {
+      method: 'POST',
+      cookie: customer.cookie,
+      body: { transferReference: 'BANK-TXN-2026-0042', paidConfirmation: true },
+    },
+  );
+  assert.equal(preConfirmationPayment.response.status, 200);
+  assert.equal(preConfirmationPayment.result.order.status, 'Received');
+  assert.equal(preConfirmationPayment.result.order.paymentStatus, 'proof_submitted');
   const assignment = await request(`/api/admin/orders/${order.result.order.id}`, {
     method: 'PATCH',
     cookie: adminCookie,
@@ -665,11 +698,6 @@ test('customer and rider workflows share orders, assignment, and notifications',
   assert.equal(paymentInstructions.result.bank.bankName, 'A&M Admin Bank');
   assert.equal(paymentInstructions.result.bank.accountName, 'A&M Logistics');
   assert.equal(paymentInstructions.result.bank.accountNumber, '0123456789');
-  const paymentCannotBeVerifiedBeforeReference = await request(`/api/admin/orders/${order.result.order.id}/payment`, {
-    method: 'PATCH',
-    cookie: adminCookie,
-  });
-  assert.equal(paymentCannotBeVerifiedBeforeReference.response.status, 409);
   const riderCannotViewInstructions = await request(
     `/api/customer/orders/${order.result.order.id}/payment-instructions`,
     { cookie: riderLogin.cookie },
@@ -681,26 +709,6 @@ test('customer and rider workflows share orders, assignment, and notifications',
     body: { phase: 'pickup' },
   });
   assert.equal(pickupBeforePayment.response.status, 409);
-  const submittedPaymentReference = await request(
-    `/api/customer/orders/${order.result.order.id}/payment-reference`,
-    {
-      method: 'POST',
-      cookie: customer.cookie,
-      body: { transferReference: 'BANK-TXN-2026-0042' },
-    },
-  );
-  assert.equal(submittedPaymentReference.response.status, 400);
-  assert.match(submittedPaymentReference.result.error, /confirm that you have completed/i);
-  const confirmedPaymentSubmission = await request(
-    `/api/customer/orders/${order.result.order.id}/payment-reference`,
-    {
-      method: 'POST',
-      cookie: customer.cookie,
-      body: { transferReference: 'BANK-TXN-2026-0042', paidConfirmation: true },
-    },
-  );
-  assert.equal(confirmedPaymentSubmission.response.status, 200);
-  assert.equal(confirmedPaymentSubmission.result.order.paymentStatus, 'proof_submitted');
   assert.ok(emails.some(email => email.to === 'admin@example.com' && /payment reference submitted/i.test(email.subject)));
   const adminOrdersWithPaymentReference = await request('/api/admin/orders', { cookie: adminCookie });
   assert.equal(

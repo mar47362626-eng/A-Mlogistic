@@ -60,6 +60,9 @@ async function sendBrevoEmail({ to, subject, text, html, attachment, inlineImage
         port: smtpPort,
         secure: smtpPort === 465,
         requireTLS: smtpPort !== 465,
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 15000,
         auth: {
           user: process.env.BREVO_SMTP_LOGIN,
           pass: process.env.BREVO_SMTP_KEY,
@@ -123,6 +126,7 @@ async function sendBrevoEmail({ to, subject, text, html, attachment, inlineImage
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
+      signal: AbortSignal.timeout(15000),
       body: JSON.stringify({
         sender: {
           name: senderName,
@@ -1127,8 +1131,9 @@ function createApp(database, {
     const order = await database.find('orders', record => record.id === request.params.id
       && record.user_id === request.auth.principalId);
     if (!order) throw requestError('Order not found.', 404);
-    if (order.status !== 'Confirmed' || order.delivery_price_ngn == null) {
-      throw requestError('Payment instructions are available after A&M confirms your priced order.', 409);
+    if (order.status === 'Cancelled') throw requestError('Payment instructions are unavailable for a cancelled order.', 409);
+    if (order.delivery_price_ngn == null || !order.delivery_price_confirmed) {
+      throw requestError('Payment instructions are available after A&M saves your final delivery fee.', 409);
     }
     response.json({
       bank: await bankTransferDetails(database),
@@ -1145,8 +1150,8 @@ function createApp(database, {
       const order = await database.find('orders', record => record.id === request.params.id
         && record.user_id === request.auth.principalId);
       if (!order) throw requestError('Order not found.', 404);
-      if (order.status !== 'Confirmed' || order.delivery_price_ngn == null) {
-        throw requestError('You can submit payment details after A&M confirms your priced order.', 409);
+      if (order.status === 'Cancelled' || order.delivery_price_ngn == null || !order.delivery_price_confirmed) {
+        throw requestError('You can submit payment details after A&M saves your final delivery fee.', 409);
       }
       if (order.payment_status === 'paid') throw requestError('This order has already been marked as paid.', 409);
       if (request.body.paidConfirmation !== true) {
@@ -1437,8 +1442,8 @@ function createApp(database, {
     try {
       const order = await database.find('orders', record => record.id === request.params.id);
       if (!order) throw requestError('Order not found.', 404);
-      if (order.status !== 'Confirmed' || order.delivery_price_ngn == null) {
-        throw requestError('Only a confirmed, priced order can be verified for payment.', 409);
+      if (order.status === 'Cancelled' || order.delivery_price_ngn == null || !order.delivery_price_confirmed) {
+        throw requestError('Only a priced, non-cancelled order can be verified for payment.', 409);
       }
       if (order.payment_status === 'paid') throw requestError('This order is already marked as paid.', 409);
       if (order.payment_status !== 'proof_submitted' || !order.transfer_reference) {
