@@ -114,13 +114,12 @@
                 <label>Pickup address<textarea name="pickup" rows="3" autocomplete="street-address" required placeholder="Street, city, state"></textarea></label>
                 <label>Delivery address<textarea name="delivery" rows="3" required placeholder="Street, city, state"></textarea></label>
               </div>
-              <div class="form-row">
-                <label>Approximate route distance (km)<input id="delivery-distance" name="deliveryDistanceKm" type="number" min="0.1" max="100000" step="0.1" required placeholder="For example, 2.4"></label>
-                <div class="fee-estimate" aria-live="polite">
-                  <span>Estimated delivery fee</span>
-                  <strong id="delivery-price-preview">Enter the approximate distance to see an estimate.</strong>
-                  <small>A&M will review the addresses and confirm the final fee before payment.</small>
-                </div>
+              <button class="button button-dark route-estimate-button" id="calculate-route" type="button">Calculate route and fee</button>
+              <div class="fee-estimate" aria-live="polite">
+                <span>Estimated delivery fee</span>
+                <strong id="delivery-price-preview">Enter both addresses, then calculate your route.</strong>
+                <small id="route-distance">The website calculates driving distance from your addresses. Address lookup is sent to OpenStreetMap; driving routes use OSRM.</small>
+                <small><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a></small>
               </div>
               <div class="form-row">
                 <label>Pickup contact email<input name="pickupEmail" type="email" autocomplete="email" required placeholder="person at pickup"></label>

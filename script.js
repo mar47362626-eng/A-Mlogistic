@@ -4,9 +4,12 @@ const authView = document.querySelector('#auth-view');
 const dashboard = document.querySelector('#customer-dashboard');
 let currentUser = null;
 let selectedPhotoUrl = '';
-let deliveryPricing = null;
-const deliveryDistanceInput = document.querySelector('#delivery-distance');
+let calculatedRoute = null;
+const pickupAddressInput = document.querySelector('#order-form [name="pickup"]');
+const deliveryAddressInput = document.querySelector('#order-form [name="delivery"]');
 const deliveryPricePreview = document.querySelector('#delivery-price-preview');
+const routeDistance = document.querySelector('#route-distance');
+const calculateRouteButton = document.querySelector('#calculate-route');
 
 menuToggle.addEventListener('click', () => {
   const isOpen = menuToggle.getAttribute('aria-expanded') === 'true';
@@ -14,9 +17,6 @@ menuToggle.addEventListener('click', () => {
   menuToggle.setAttribute('aria-label', isOpen ? 'Open navigation' : 'Close navigation');
   navigation.classList.toggle('is-open', !isOpen);
 });
-
-deliveryDistanceInput.addEventListener('input', updateDeliveryPricePreview);
-loadDeliveryPricing();
 
 navigation.addEventListener('click', event => {
   const link = event.target.closest('a');
@@ -104,32 +104,10 @@ function formatNgn(amount) {
   return new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(amount);
 }
 
-function updateDeliveryPricePreview() {
-  const distanceKm = Number(deliveryDistanceInput.value);
-  if (!deliveryPricing) {
-    deliveryPricePreview.textContent = 'The estimate could not be loaded. Refresh the page and try again.';
-    return;
-  }
-  if (!deliveryDistanceInput.value || !Number.isFinite(distanceKm) || distanceKm <= 0 || distanceKm > 100_000) {
-    deliveryPricePreview.textContent = 'Enter a distance greater than 0 and no more than 100,000 km.';
-    return;
-  }
-  const amount = deliveryPricing.baseFeeNgn + Math.ceil(distanceKm) * deliveryPricing.ratePerKmNgn;
-  if (!Number.isSafeInteger(amount) || amount > 1_000_000_000) {
-    deliveryPricePreview.textContent = 'This route is too long to estimate. Contact A&M Logistics for a quote.';
-    return;
-  }
-  deliveryPricePreview.textContent = formatNgn(amount);
-}
-
-async function loadDeliveryPricing() {
-  try {
-    deliveryPricing = await api.request('/api/pricing');
-    updateDeliveryPricePreview();
-  } catch (error) {
-    deliveryPricing = null;
-    deliveryPricePreview.textContent = `Could not load the delivery estimate: ${error.message}`;
-  }
+function invalidateCalculatedRoute() {
+  calculatedRoute = null;
+  deliveryPricePreview.textContent = 'Addresses changed. Calculate the route again to see the estimate.';
+  routeDistance.textContent = 'The website calculates driving distance from your addresses. Address lookup is sent to OpenStreetMap; driving routes use OSRM.';
 }
 
 async function renderOrders() {
@@ -338,6 +316,45 @@ document.querySelector('#show-order-form').addEventListener('click', event => {
   if (!orderForm.hidden) orderForm.querySelector('input[name="item"]').focus();
 });
 
+async function calculateDeliveryRoute() {
+  const pickup = pickupAddressInput.value.trim();
+  const delivery = deliveryAddressInput.value.trim();
+  if (!pickup || !delivery) {
+    showMessage('#order-status', 'Enter both the pickup and delivery addresses before calculating the route.');
+    (pickup ? deliveryAddressInput : pickupAddressInput).focus();
+    return;
+  }
+  calculateRouteButton.disabled = true;
+  calculateRouteButton.textContent = 'Calculating route…';
+  showMessage('#order-status', '');
+  deliveryPricePreview.textContent = 'Finding the addresses and calculating the driving route…';
+  routeDistance.textContent = 'This may take a few seconds.';
+  try {
+    const estimate = await api.request('/api/pricing/estimate', {
+      method: 'POST',
+      body: JSON.stringify({ pickup, delivery }),
+    });
+    if (pickup !== pickupAddressInput.value.trim() || delivery !== deliveryAddressInput.value.trim()) {
+      invalidateCalculatedRoute();
+      return;
+    }
+    calculatedRoute = { pickup, delivery };
+    deliveryPricePreview.textContent = formatNgn(estimate.estimatedFeeNgn);
+    routeDistance.textContent = `Driving distance: ${estimate.distanceKm} km · ${estimate.pickupLabel} → ${estimate.deliveryLabel}. A&M will review the route and confirm the final fee before payment.`;
+  } catch (error) {
+    calculatedRoute = null;
+    deliveryPricePreview.textContent = 'We could not calculate this route.';
+    routeDistance.textContent = error.message;
+  } finally {
+    calculateRouteButton.disabled = false;
+    calculateRouteButton.textContent = 'Calculate route and fee';
+  }
+}
+
+calculateRouteButton.addEventListener('click', calculateDeliveryRoute);
+pickupAddressInput.addEventListener('input', invalidateCalculatedRoute);
+deliveryAddressInput.addEventListener('input', invalidateCalculatedRoute);
+
 document.querySelector('#register-form').addEventListener('submit', async event => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -444,6 +461,13 @@ document.querySelector('#order-form').addEventListener('submit', async event => 
     showMessage('#order-status', 'Add a JPG, PNG, or WebP item photo under 5 MB before saving your request.');
     return;
   }
+  if (!calculatedRoute
+    || calculatedRoute.pickup !== pickupAddressInput.value.trim()
+    || calculatedRoute.delivery !== deliveryAddressInput.value.trim()) {
+    showMessage('#order-status', 'Calculate the route and estimated fee before saving your request.');
+    calculateRouteButton.focus();
+    return;
+  }
   const submit = form.querySelector('[type="submit"]');
   submit.disabled = true;
   try {
@@ -457,7 +481,6 @@ document.querySelector('#order-form').addEventListener('submit', async event => 
         delivery: values.get('delivery'),
         pickupEmail: values.get('pickupEmail'),
         deliveryEmail: values.get('deliveryEmail'),
-        deliveryDistanceKm: values.get('deliveryDistanceKm'),
         date: values.get('date'),
         phone: values.get('phone'),
         notes: values.get('notes'),
@@ -465,7 +488,9 @@ document.querySelector('#order-form').addEventListener('submit', async event => 
       }),
     });
     form.reset();
-    updateDeliveryPricePreview();
+    calculatedRoute = null;
+    deliveryPricePreview.textContent = 'Enter both addresses, then calculate your route.';
+    routeDistance.textContent = 'The website calculates driving distance from your addresses. Address lookup is sent to OpenStreetMap; driving routes use OSRM.';
     document.querySelector('#photo-preview').hidden = true;
     if (selectedPhotoUrl) URL.revokeObjectURL(selectedPhotoUrl);
     selectedPhotoUrl = '';

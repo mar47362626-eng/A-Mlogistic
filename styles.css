@@ -150,6 +150,7 @@ h2 { font: 600 43px/1.15 var(--display); letter-spacing: -1.1px; }
 .portal-form[hidden] { display: none; }
 .portal-form h3, .dashboard-heading h3, .history-heading h3 { font: 700 20px var(--display); margin: 0 0 5px; }
 .form-lead { color: var(--muted); font-size: 12px; margin: 0; line-height: 1.6; }
+.route-estimate-button { justify-self: start; }
 .fee-estimate { display: grid; align-content: center; gap: 5px; padding: 12px 15px; border-left: 3px solid #829c3b; background: #e9ecdf; }
 .fee-estimate > span { color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .7px; }
 .fee-estimate strong { font: 700 20px var(--display); }

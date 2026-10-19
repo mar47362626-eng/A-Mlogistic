@@ -5,6 +5,7 @@ const { createDatabase } = require('./db');
 const {
   brevoApiFailure,
   createApp,
+  createDeliveryRouteCalculator,
   seedAdmin,
   sendBrevoEmail,
 } = require('./server');
@@ -68,6 +69,11 @@ before(async () => {
       }
       emails.push(email);
     },
+    calculateRoute: async (pickup, delivery) => ({
+      distanceKm: 2.4,
+      pickupLabel: `${pickup}, Nigeria`,
+      deliveryLabel: `${delivery}, Nigeria`,
+    }),
   }).listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
   baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -108,6 +114,39 @@ test('separate site pages are served and protected APIs enforce roles', async ()
   assert.equal(jsonDatabaseFile.status, 404);
   assert.equal(pricing.response.status, 200);
   assert.deepEqual(pricing.result, { baseFeeNgn: 2500, ratePerKmNgn: 1000 });
+  const anonymousRouteEstimate = await request('/api/pricing/estimate', {
+    method: 'POST',
+    body: { pickup: 'Ibadan', delivery: 'Lagos' },
+  });
+  assert.equal(anonymousRouteEstimate.response.status, 401);
+});
+
+test('OpenStreetMap geocoding and OSRM driving distances are cached and converted to kilometres', async () => {
+  const requests = [];
+  const calculateRoute = createDeliveryRouteCalculator(async url => {
+    requests.push(String(url));
+    if (String(url).includes('nominatim.openstreetmap.org')) {
+      const query = new URL(url).searchParams.get('q');
+      return new Response(JSON.stringify([{
+        lat: query.startsWith('Ibadan') ? '7.3775' : '6.5244',
+        lon: query.startsWith('Ibadan') ? '3.9470' : '3.3792',
+        display_name: query.startsWith('Ibadan') ? 'Ibadan, Nigeria' : 'Lagos, Nigeria',
+      }]), { status: 200 });
+    }
+    return new Response(JSON.stringify({ code: 'Ok', routes: [{ distance: 2475 }] }), { status: 200 });
+  });
+
+  const first = await calculateRoute('Ibadan', 'Lagos');
+  const cached = await calculateRoute('Ibadan', 'Lagos');
+  assert.deepEqual(first, {
+    distanceKm: 2.5,
+    pickupLabel: 'Ibadan, Nigeria',
+    deliveryLabel: 'Lagos, Nigeria',
+  });
+  assert.deepEqual(cached, first);
+  assert.equal(requests.length, 3);
+  assert.match(requests[0], /countrycodes=ng/);
+  assert.match(requests[2], /router\.project-osrm\.org\/route\/v1\/driving/);
 });
 
 test('favicon requests redirect to the branded SVG icon', async () => {
@@ -454,31 +493,27 @@ test('customer and rider workflows share orders, assignment, and notifications',
   assert.equal(customerProfile.result.user.email, 'customer@example.com');
   const forbidden = await request('/api/admin/orders', { cookie: customer.cookie });
   assert.equal(forbidden.response.status, 403);
+  const routeEstimate = await request('/api/pricing/estimate', {
+    method: 'POST',
+    cookie: customer.cookie,
+    body: { pickup: 'Ibadan', delivery: 'Lagos' },
+  });
+  assert.equal(routeEstimate.response.status, 200);
+  assert.equal(routeEstimate.result.distanceKm, 2.4);
+  assert.equal(routeEstimate.result.estimatedFeeNgn, 5500);
   const customerRegistration = await request('/api/admin/registrations', { cookie: adminCookie });
   assert.deepEqual(
     customerRegistration.result.registrations.map(registration => registration.type).sort(),
     ['Customer', 'Customer', 'Rider', 'Rider'],
   );
 
-  const orderWithoutDistance = await request('/api/customer/orders', {
+  const estimateWithoutAddress = await request('/api/pricing/estimate', {
     method: 'POST',
     cookie: customer.cookie,
-    body: {
-      item: 'Small box',
-      quantity: 1,
-      description: 'Missing distance case',
-      pickup: 'One Street',
-      delivery: 'Two Street',
-      pickupEmail: 'pickup@example.com',
-      deliveryEmail: 'delivery@example.com',
-      date: '2026-10-20',
-      phone: '555-0110',
-      notes: '',
-      photo: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
-    },
+    body: { pickup: 'One Street' },
   });
-  assert.equal(orderWithoutDistance.response.status, 400);
-  assert.match(orderWithoutDistance.result.error, /distance/i);
+  assert.equal(estimateWithoutAddress.response.status, 400);
+  assert.match(estimateWithoutAddress.result.error, /delivery/i);
 
   const order = await request('/api/customer/orders', {
     method: 'POST',
@@ -489,13 +524,13 @@ test('customer and rider workflows share orders, assignment, and notifications',
       description: 'Fragile',
       pickup: 'One Street',
       delivery: 'Two Street',
-      deliveryDistanceKm: 2.4,
       pickupEmail: 'pickup@example.com',
       deliveryEmail: 'delivery@example.com',
       date: '2026-10-20',
       phone: '555-0110',
       notes: '',
       deliveryPriceNgn: 1,
+      deliveryDistanceKm: 1,
       photo: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
     },
   });

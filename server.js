@@ -263,6 +263,108 @@ function deliveryPricing() {
   return { baseFeeNgn, ratePerKmNgn };
 }
 
+function createDeliveryRouteCalculator(fetchImpl = globalThis.fetch) {
+  const cache = new Map();
+  let geocodingQueue = Promise.resolve();
+  let lastGeocodingRequestAt = 0;
+
+  async function geocode(address) {
+    const search = async () => {
+      const waitMs = Math.max(0, 1000 - (Date.now() - lastGeocodingRequestAt));
+      if (waitMs) await new Promise(resolve => setTimeout(resolve, waitMs));
+      lastGeocodingRequestAt = Date.now();
+      const url = new URL('https://nominatim.openstreetmap.org/search');
+      url.search = new URLSearchParams({
+        q: `${address}, Nigeria`,
+        countrycodes: 'ng',
+        format: 'jsonv2',
+        limit: '1',
+      });
+      let response;
+      try {
+        response = await fetchImpl(url, {
+          headers: { 'User-Agent': 'A&M Logistics delivery distance calculator (https://a-mlogistic.onrender.com)' },
+          signal: AbortSignal.timeout(12000),
+        });
+      } catch {
+        throw requestError('The address search service is unavailable right now. Please try again shortly.', 502);
+      }
+      if (!response.ok) {
+        throw requestError('The address search service could not calculate this route. Please try again later.', 502);
+      }
+      let matches;
+      try {
+        matches = await response.json();
+      } catch {
+        throw requestError('The address search service returned an invalid response. Please try again later.', 502);
+      }
+      const match = matches[0];
+      const latitude = Number(match?.lat);
+      const longitude = Number(match?.lon);
+      if (!match || !Number.isFinite(latitude) || latitude < -90 || latitude > 90
+        || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+        throw requestError('We could not find one of those addresses. Enter a more complete street, city, and state address.', 422);
+      }
+      return {
+        latitude,
+        longitude,
+        label: String(match.display_name || address),
+      };
+    };
+
+    const result = geocodingQueue.then(search, search);
+    geocodingQueue = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
+  return async (pickup, delivery) => {
+    const cacheKey = crypto.createHash('sha256')
+      .update(`${pickup.trim().toLowerCase()}\n${delivery.trim().toLowerCase()}`)
+      .digest('hex');
+    const cached = cache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) return cached.route;
+
+    if (typeof fetchImpl !== 'function') {
+      throw requestError('The route calculation service is unavailable right now. Please try again later.', 503);
+    }
+    const pickupLocation = await geocode(pickup);
+    const deliveryLocation = await geocode(delivery);
+    const coordinates = `${pickupLocation.longitude},${pickupLocation.latitude};${deliveryLocation.longitude},${deliveryLocation.latitude}`;
+    let response;
+    try {
+      response = await fetchImpl(`https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=false&alternatives=false&steps=false`, {
+        signal: AbortSignal.timeout(12000),
+      });
+    } catch {
+      throw requestError('The driving-route service is unavailable right now. Please try again shortly.', 502);
+    }
+    if (!response.ok) {
+      throw requestError('The driving-route service could not calculate this route. Please try again later.', 502);
+    }
+    let result;
+    try {
+      result = await response.json();
+    } catch {
+      throw requestError('The driving-route service returned an invalid response. Please try again later.', 502);
+    }
+    const distanceKm = Number(result.routes?.[0]?.distance) / 1000;
+    if (result.code !== 'Ok' || !Number.isFinite(distanceKm) || distanceKm <= 0 || distanceKm > 100_000) {
+      throw requestError('No drivable route was found between those addresses. Check the addresses and try again.', 422);
+    }
+    const route = {
+      distanceKm: Math.round(distanceKm * 10) / 10,
+      pickupLabel: pickupLocation.label,
+      deliveryLabel: deliveryLocation.label,
+    };
+    for (const [key, entry] of cache) {
+      if (entry.expiresAt <= Date.now()) cache.delete(key);
+    }
+    if (cache.size >= 500) cache.delete(cache.keys().next().value);
+    cache.set(cacheKey, { route, expiresAt: Date.now() + 10 * 60 * 1000 });
+    return route;
+  };
+}
+
 function estimateDeliveryFee(distanceKm) {
   if (!Number.isFinite(distanceKm) || distanceKm <= 0 || distanceKm > 100_000) {
     throw requestError('Enter an approximate route distance greater than 0 and no more than 100,000 km.');
@@ -529,6 +631,7 @@ function parsePhoto(dataUrl) {
 
 function createApp(database, {
   sendEmail = sendBrevoEmail,
+  calculateRoute = createDeliveryRouteCalculator(),
 } = {}) {
   const app = express();
   const requireCustomer = authenticate(database, 'customer');
@@ -538,6 +641,7 @@ function createApp(database, {
   const requireAdmin = authenticate(database, 'admin');
   const optionalAdmin = authenticate(database, 'admin', { allowAnonymous: true });
   const requireAdminRole = authenticate(database, null);
+  const routeEstimateRequests = new Map();
   const adminEmails = async () => {
     const registeredEmails = (await database.list('users', user => user.role === 'admin')).map(admin => admin.email);
     const configuredEmail = normalizeEmail(process.env.ADMIN_EMAIL);
@@ -739,6 +843,28 @@ function createApp(database, {
     response.json(deliveryPricing());
   });
 
+  app.post('/api/pricing/estimate', requireCustomer, async (request, response, next) => {
+    try {
+      const now = Date.now();
+      const userId = request.auth.principalId;
+      const recentRequests = (routeEstimateRequests.get(userId) || []).filter(timestamp => now - timestamp < 60_000);
+      if (recentRequests.length >= 10) {
+        throw requestError('Too many route estimates were requested. Please wait a minute before trying again.', 429);
+      }
+      recentRequests.push(now);
+      routeEstimateRequests.set(userId, recentRequests);
+      const pickup = textField(request.body, 'pickup', { max: 500 });
+      const delivery = textField(request.body, 'delivery', { max: 500 });
+      const route = await calculateRoute(pickup, delivery);
+      response.json({
+        ...route,
+        estimatedFeeNgn: estimateDeliveryFee(route.distanceKm),
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get('/api/auth/admin/me', requireAdmin, async (request, response) => {
     const admin = await database.find('users', user => user.id === request.auth.principalId);
     if (!admin) return response.status(401).json({ error: 'Admin account not found.' });
@@ -883,7 +1009,8 @@ function createApp(database, {
       }
       const phone = textField(request.body, 'phone', { max: 40 });
       const notes = textField(request.body, 'notes', { min: 0, max: 1200 });
-      const deliveryDistanceKm = Number(request.body.deliveryDistanceKm);
+      const route = await calculateRoute(pickup, delivery);
+      const deliveryDistanceKm = route.distanceKm;
       const deliveryPriceNgn = estimateDeliveryFee(deliveryDistanceKm);
       const { photo, type } = parsePhoto(request.body.photo);
       const id = crypto.randomUUID();
@@ -1524,6 +1651,7 @@ if (require.main === module) {
 module.exports = {
   brevoApiFailure,
   createApp,
+  createDeliveryRouteCalculator,
   passwordDigest,
   passwordMatches,
   seedAdmin,
