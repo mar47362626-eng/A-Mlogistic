@@ -107,7 +107,7 @@ body.rider-dashboard-active .rider-panel { padding:0; border:0; background:trans
 .rider-workspace-header .header-tools { display:flex; align-items:center; gap:10px; padding-top:8px; }
 .rider-workspace-header .local-tag { display:inline-flex; align-items:center; min-height:34px; padding:0 10px; background:#e3ebd3; color:#526b28; font-size:8px; letter-spacing:.8px; font-weight:700; }
 .rider-workspace-header .refresh-button { min-height:34px; padding:0 13px; border:1px solid var(--line); background:var(--surface); color:var(--ink); font-size:11px; font-weight:700; cursor:pointer; }
-.rider-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; margin:0 0 20px; }
+.rider-metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin:0 0 20px; }
 .rider-metrics .metric { min-width:0; min-height:110px; padding:16px; display:grid; align-content:start; justify-items:start; gap:7px; border:1px solid var(--line); background:var(--surface); }
 .rider-metrics .metric-label { color:#656d64; font-size:10px; font-weight:600; }
 .rider-metrics .metric strong { max-width:100%; overflow-wrap:anywhere; font:700 21px/1.2 var(--display); }

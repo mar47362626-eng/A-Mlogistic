@@ -377,6 +377,22 @@ function estimateDeliveryFee(distanceKm) {
   return estimatedFeeNgn;
 }
 
+function estimateRiderEarnings(distanceKm) {
+  const configuredRate = process.env.RIDER_RATE_PER_KM_NGN;
+  const ratePerKmNgn = configuredRate === undefined ? 1500 : Number(configuredRate);
+  if (!Number.isSafeInteger(ratePerKmNgn) || ratePerKmNgn < 1 || ratePerKmNgn > 1_000_000_000) {
+    throw requestError('RIDER_RATE_PER_KM_NGN must be a whole-naira amount between 1 and 1,000,000,000.', 503);
+  }
+  if (!Number.isFinite(distanceKm) || distanceKm <= 0 || distanceKm > 100_000) {
+    throw requestError('Rider earnings cannot be calculated because the delivery distance is unavailable.', 409);
+  }
+  const earningsNgn = ratePerKmNgn * Math.ceil(distanceKm);
+  if (!Number.isSafeInteger(earningsNgn)) {
+    throw requestError('Rider earnings exceed the supported amount.', 409);
+  }
+  return earningsNgn;
+}
+
 function cookieValue(request, name) {
   const cookieHeader = request.headers.cookie || '';
   const entry = cookieHeader.split(';').map(value => value.trim()).find(value => value.startsWith(`${name}=`));
@@ -526,6 +542,7 @@ async function publicOrder(database, order, { includeTransferReference = false }
     deliveryPriceConfirmed: Boolean(order.delivery_price_confirmed ?? (order.delivery_price_ngn != null)),
     deliveryBaseFeeNgn: order.delivery_base_fee_ngn ?? null,
     deliveryRatePerKmNgn: order.delivery_rate_per_km_ngn ?? null,
+    riderEarningsNgn: order.rider_earnings_ngn ?? null,
     paymentStatus: order.payment_status || null,
     ...(includeTransferReference ? { transferReference: order.transfer_reference || '' } : {}),
     pickupVerified: Boolean(order.pickup_verified_at),
@@ -1320,6 +1337,9 @@ function createApp(database, {
       const updatedAt = Date.now();
       const deliveredAt = status === 'Delivered' ? order.delivered_at || updatedAt : null;
       const statusChanged = status !== order.status;
+      const riderEarningsNgn = status === 'Delivered' && order.rider_earnings_ngn == null
+        ? estimateRiderEarnings(deliveryDistanceKm)
+        : order.rider_earnings_ngn ?? null;
       const updatedOrder = await database.update('orders', record => record.id === request.params.id, record => ({
         ...record,
         status,
@@ -1327,6 +1347,7 @@ function createApp(database, {
         delivery_price_ngn: deliveryPriceNgn,
         delivery_price_confirmed: deliveryPriceConfirmed,
         delivery_distance_km: deliveryDistanceKm,
+        rider_earnings_ngn: riderEarningsNgn,
         updated_at: updatedAt,
         delivered_at: deliveredAt,
       }));
@@ -1492,9 +1513,13 @@ function createApp(database, {
       }
       const verifiedAt = Date.now();
       const newStatus = isPickup ? 'Collected' : 'Delivered';
+      const riderEarningsNgn = isPickup
+        ? order.rider_earnings_ngn ?? null
+        : order.rider_earnings_ngn ?? estimateRiderEarnings(order.delivery_distance_km);
       const updatedOrder = await database.update('orders', record => record.id === order.id, record => ({
         ...record,
         status: newStatus,
+        rider_earnings_ngn: riderEarningsNgn,
         updated_at: verifiedAt,
         delivered_at: isPickup ? record.delivered_at : verifiedAt,
         [isPickup ? 'pickup_verified_at' : 'delivery_verified_at']: verifiedAt,

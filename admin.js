@@ -205,6 +205,7 @@ function renderDetail(order, message = '', messageState = 'success') {
       formatNgn(order.deliveryPriceNgn),
     );
     addDetailField(paymentFields, 'Payment status', order.paymentStatus || 'unpaid');
+    if (order.riderEarningsNgn != null) addDetailField(paymentFields, 'Rider earnings', formatNgn(order.riderEarningsNgn));
     if (order.transferReference) addDetailField(paymentFields, 'Customer transaction reference', order.transferReference);
     payment.append(paymentFields);
   } else {

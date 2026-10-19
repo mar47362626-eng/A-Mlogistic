@@ -70,6 +70,15 @@ async function renderRiderMessages() {
 }
 
 function renderDeliveries(orders, warning = '') {
+  const completedEarnings = orders
+    .filter(order => order.status === 'Delivered' && Number.isSafeInteger(order.riderEarningsNgn))
+    .reduce((total, order) => total + order.riderEarningsNgn, 0);
+  document.querySelector('#dashboard-rider-earnings').textContent = new Intl.NumberFormat('en-NG', {
+    style: 'currency',
+    currency: 'NGN',
+    maximumFractionDigits: 0,
+  }).format(completedEarnings);
+
   const list = document.querySelector('#assigned-deliveries');
   list.classList.remove('feedback-message');
   delete list.dataset.state;
@@ -108,6 +117,11 @@ function renderDeliveries(orders, warning = '') {
     const date = document.createElement('p');
     date.textContent = `Pickup date: ${order.date}`;
     item.append(photo, heading, status, pickup, pickupEmail, delivery, date);
+    const earnings = document.createElement('p');
+    earnings.textContent = order.riderEarningsNgn == null
+      ? 'Earnings: recorded after delivery is completed'
+      : `Earnings: ${new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(order.riderEarningsNgn)}`;
+    item.append(earnings);
     if (order.status === 'Confirmed' && !order.pickupVerified) {
       if (order.deliveryPriceNgn !== null && order.deliveryPriceNgn !== undefined && order.paymentStatus !== 'paid') {
         const payment = document.createElement('p');

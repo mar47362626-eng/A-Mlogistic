@@ -25,6 +25,7 @@ Production, including the app running on Render, uses Supabase PostgreSQL. The a
 - The public Render service URL is configured in `api-client.js` as `window.API_BASE_URL` before publishing the static GitHub Pages frontend; this is public configuration, not a secret.
 - `BANK_NAME`, `BANK_ACCOUNT_NAME`, and `BANK_ACCOUNT_NUMBER`: the business account that receives transfers. Set the real account details before confirming orders.
 - `DELIVERY_BASE_FEE_NGN` and `DELIVERY_RATE_PER_KM_NGN`: optional estimate settings; defaults are `2500` and `1000`.
+- `RIDER_RATE_PER_KM_NGN`: rider earnings per started kilometre; defaults to `1500`. Earnings are recorded only when delivery is completed, using the server-calculated route distance.
 
 The server requires valid Supabase credentials in production and does not silently fall back to local JSON files. Local development can continue using JSON storage without Supabase credentials. Existing local JSON/SQLite data is not copied automatically; migrate existing records before switching production traffic if you need to retain them. Do not put `.env` or any service-role key in GitHub.
 

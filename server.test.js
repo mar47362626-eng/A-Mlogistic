@@ -43,6 +43,7 @@ before(async () => {
   process.env.BANK_ACCOUNT_NUMBER = '0123456789';
   process.env.DELIVERY_BASE_FEE_NGN = '2500';
   process.env.DELIVERY_RATE_PER_KM_NGN = '1000';
+  process.env.RIDER_RATE_PER_KM_NGN = '1500';
   delete process.env.GOOGLE_MAPS_API_KEY;
   emails = [];
   failDeliveredEmail = false;
@@ -540,6 +541,7 @@ test('customer and rider workflows share orders, assignment, and notifications',
   assert.equal(order.result.order.deliveryPriceNgn, 5500);
   assert.equal(order.result.order.deliveryPriceConfirmed, false);
   assert.equal(order.result.order.paymentStatus, 'unpaid');
+  assert.equal(order.result.order.riderEarningsNgn, null);
   assert.ok(emails.slice(-3).every(email => /Estimated delivery fee: NGN 5,500/.test(email.text)));
   assert.deepEqual(
     emails.slice(-3).map(email => email.to).sort(),
@@ -747,6 +749,7 @@ test('customer and rider workflows share orders, assignment, and notifications',
   assert.equal(deliveryVerified.result.order.status, 'Delivered');
   assert.equal(deliveryVerified.result.order.pickupVerified, true);
   assert.equal(deliveryVerified.result.order.deliveryVerified, true);
+  assert.equal(deliveryVerified.result.order.riderEarningsNgn, 1500 * Math.ceil(2.4));
   assert.match(deliveryVerified.result.warning, /status email could not be sent/i);
   assert.ok(!emails.some(email => email.to === 'customer@example.com' && /delivered/i.test(email.subject)));
 
