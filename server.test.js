@@ -54,7 +54,9 @@ before(async () => {
   await seedAdmin(database);
   server = createApp(database, {
     sendEmail: async email => {
-      if (failDeliveredEmail && /delivered/i.test(email.subject)) throw new Error('Simulated mail outage.');
+      if (failDeliveredEmail && email.to === 'customer@example.com' && /delivered/i.test(email.subject)) {
+        throw new Error('Simulated mail outage.');
+      }
       if (failInTransitEmail && /on its way/i.test(email.subject) && email.inlineImage) {
         throw new Error('Simulated status-email outage.');
       }
@@ -404,8 +406,8 @@ test('customer and rider workflows share orders, assignment, and notifications',
     },
   });
   assert.equal(registeredRider.response.status, 201);
-  assert.equal(emails.at(-1).to, 'rider@example.com');
-  assert.match(emails.at(-1).subject, /application received/i);
+  assert.ok(emails.some(email => email.to === 'rider@example.com' && /application received/i.test(email.subject)));
+  assert.ok(emails.some(email => email.to === 'admin@example.com' && /new rider registration/i.test(email.subject)));
   assert.equal(registeredRider.result.rider.status, 'Pending review');
   assert.equal('password_hash' in registeredRider.result.rider, false);
 
@@ -762,6 +764,7 @@ test('customer and rider workflows share orders, assignment, and notifications',
     body: { phase: 'pickup', code: String((Number(pickupCode) + 1) % 1_000_000).padStart(6, '0') },
   });
   assert.equal(wrongPickupCode.response.status, 400);
+  assert.match(wrongPickupCode.result.error, /incorrect/i);
   const pickupVerified = await request(`/api/rider/orders/${order.result.order.id}/verify-code`, {
     method: 'POST',
     cookie: riderLogin.cookie,
@@ -813,7 +816,61 @@ test('customer and rider workflows share orders, assignment, and notifications',
   assert.equal(deliveryVerified.result.order.riderEarningsNgn, 275);
   assert.equal(deliveryVerified.result.order.riderEarningsNgn, Math.round(riderPaidOrder.paymentSubmittedAmountNgn * 0.05));
   assert.match(deliveryVerified.result.warning, /status email could not be sent/i);
+  const repeatedDeliveryVerification = await request(`/api/rider/orders/${order.result.order.id}/verify-code`, {
+    method: 'POST',
+    cookie: riderLogin.cookie,
+    body: { phase: 'delivery', code: deliveryCode },
+  });
+  assert.equal(repeatedDeliveryVerification.response.status, 409);
+  assert.match(repeatedDeliveryVerification.result.error, /not available/i);
   assert.ok(!emails.some(email => email.to === 'customer@example.com' && /delivered/i.test(email.subject)));
+  assert.ok(emails.some(email => email.to === 'rider@example.com' && /delivery completed/i.test(email.subject)
+    && /NGN 275/.test(email.text)));
+  assert.ok(emails.some(email => email.to === 'admin@example.com' && /delivery completed/i.test(email.subject)
+    && /Riley Rider/.test(email.text)
+    && /NGN 275/.test(email.text)));
+
+  const deliveredOrder = database.find('orders', record => record.id === order.result.order.id);
+  const currentUtcMonday = new Date();
+  currentUtcMonday.setUTCHours(0, 0, 0, 0);
+  currentUtcMonday.setUTCDate(currentUtcMonday.getUTCDate() - ((currentUtcMonday.getUTCDay() + 6) % 7));
+  const previousWeekStart = new Date(currentUtcMonday.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const previousWeekLabel = previousWeekStart.toISOString().slice(0, 10);
+  await database.update('orders', record => record.id === deliveredOrder.id, record => ({
+    ...record,
+    delivered_at: previousWeekStart.getTime() + 2 * 24 * 60 * 60 * 1000,
+  }));
+  const payoutRequest = await request('/api/rider/payouts', {
+    method: 'POST',
+    cookie: riderLogin.cookie,
+    body: { weekStart: previousWeekLabel },
+  });
+  assert.equal(payoutRequest.response.status, 201);
+  assert.equal(payoutRequest.result.payout.amount_ngn, 275);
+  assert.deepEqual(payoutRequest.result.payout.order_ids, [deliveredOrder.id]);
+  assert.ok(emails.some(email => email.to === 'rider@example.com' && /payout request was received/i.test(email.subject)));
+  assert.ok(emails.some(email => email.to === 'admin@example.com' && /weekly payout requested/i.test(email.subject)
+    && /275/.test(email.text)));
+  const duplicatePayoutRequest = await request('/api/rider/payouts', {
+    method: 'POST',
+    cookie: riderLogin.cookie,
+    body: { weekStart: previousWeekLabel },
+  });
+  assert.equal(duplicatePayoutRequest.response.status, 409);
+  const riderPayouts = await request('/api/rider/payouts', { cookie: riderLogin.cookie });
+  assert.equal(riderPayouts.result.payouts[0].status, 'Pending');
+  const adminPayouts = await request('/api/admin/payouts', { cookie: adminCookie });
+  assert.equal(adminPayouts.response.status, 200);
+  assert.equal(adminPayouts.result.payouts[0].orders[0].reference, order.result.order.reference);
+  assert.equal(adminPayouts.result.payouts[0].riderName, 'Riley Rider');
+  const payoutPaid = await request(`/api/admin/payouts/${payoutRequest.result.payout.id}/status`, {
+    method: 'PATCH',
+    cookie: adminCookie,
+    body: { status: 'Paid' },
+  });
+  assert.equal(payoutPaid.response.status, 200);
+  assert.equal(payoutPaid.result.payout.status, 'Paid');
+  assert.ok(emails.some(email => email.to === 'rider@example.com' && /payout paid/i.test(email.subject)));
 
   const sent = await request('/api/admin/notifications', {
     method: 'POST',

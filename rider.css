@@ -119,6 +119,18 @@ body.rider-dashboard-active .rider-panel { padding:0; border:0; background:trans
 .panel-heading p { margin:0; color:var(--muted); font-size:10px; }
 .overview-status > p { margin:0; padding:18px; color:var(--muted); font-size:11px; line-height:1.7; }
 .rider-panel-card .rider-inbox { margin:0; padding:18px; border-top:0; }
+.payout-content { display:grid; gap:10px; padding:17px 18px; }
+.payout-content > label { color:#5d655c; font-size:10px; font-weight:700; }
+.payout-controls { display:flex; flex-wrap:wrap; align-items:center; gap:9px; }
+.payout-controls select { min-height:38px; padding:0 10px; border:1px solid var(--line); background:#fff; color:var(--ink); font:500 11px var(--body); }
+.payout-controls .submit-button { min-height:38px; }
+.payout-controls .submit-button:disabled { opacity:.55; cursor:not-allowed; }
+.payout-summary { margin:0; color:var(--forest); font-size:11px; font-weight:700; line-height:1.6; }
+.payout-notice { margin:0; }
+.payout-deliveries { display:grid; gap:6px; padding:10px 12px; background:#f4f5f0; }
+.payout-deliveries p,.payout-status { margin:0; color:var(--muted); font-size:10px; line-height:1.6; }
+.payout-history { padding-top:8px; border-top:1px solid var(--line); }
+.payout-status { color:#526b28; font-weight:700; }
 .form-status.feedback-message { margin:0; }
 @media(max-width:850px) { .rider-layout { grid-template-columns:1fr; gap:30px; padding:45px 7%; } .rider-intro h1 { font-size:44px; } .rider-facts { grid-template-columns:1fr 1fr; } .rider-dashboard-shell { display:flex; flex-direction:column; } .rider-sidebar { width:100%; min-height:auto; padding:18px; } .rider-sidebar .admin-brand { padding-bottom:16px; } .rider-nav { grid-template-columns:repeat(3,minmax(0,1fr)); } .rider-nav-item { text-align:center; } .rider-sidebar .sidebar-bottom { display:none; } .rider-main-panel { padding-top:20px; } .rider-content-grid { grid-template-columns:1fr; } }
 @media(max-width:560px) { .rider-header { height:62px; padding:0 5%; } .rider-layout { padding:34px 5%; gap:22px; } .rider-intro h1 { font-size:40px; } .rider-facts { grid-template-columns:1fr; gap:10px; margin-top:22px; } .local-note { margin-top:22px; } .rider-panel { padding:21px 16px; } .form-row { grid-template-columns:1fr; } .dashboard-welcome { flex-direction:column; } .rider-dashboard-stats { grid-template-columns:1fr; } .rider-dashboard-stats article + article { border-left:0; border-top:1px solid var(--line); } .rider-workspace-header { flex-direction:column; gap:12px; } .rider-main-panel { padding:18px 14px 16px; } .rider-metrics { grid-template-columns:1fr; gap:8px; } .rider-metrics .metric { min-height:90px; } }

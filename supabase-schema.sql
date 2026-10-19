@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS public.app_records (
   collection text NOT NULL
-    CHECK (collection IN ('users', 'riders', 'orders', 'notifications', 'sessions')),
+    CHECK (collection IN ('users', 'riders', 'orders', 'notifications', 'sessions', 'payouts')),
   record_id text NOT NULL,
   email text,
   reference text,
@@ -8,6 +8,13 @@ CREATE TABLE IF NOT EXISTS public.app_records (
   data jsonb NOT NULL CHECK (jsonb_typeof(data) = 'object'),
   PRIMARY KEY (collection, record_id)
 );
+
+ALTER TABLE public.app_records
+  DROP CONSTRAINT IF EXISTS app_records_collection_check;
+
+ALTER TABLE public.app_records
+  ADD CONSTRAINT app_records_collection_check
+  CHECK (collection IN ('users', 'riders', 'orders', 'notifications', 'sessions', 'payouts'));
 
 CREATE UNIQUE INDEX IF NOT EXISTS app_records_users_email_key
   ON public.app_records (lower(email))
@@ -24,6 +31,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS app_records_orders_reference_key
 CREATE UNIQUE INDEX IF NOT EXISTS app_records_riders_reference_key
   ON public.app_records (reference)
   WHERE collection = 'riders' AND reference IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS app_records_payouts_reference_key
+  ON public.app_records (reference)
+  WHERE collection = 'payouts' AND reference IS NOT NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS app_records_sessions_token_hash_key
   ON public.app_records (token_hash)

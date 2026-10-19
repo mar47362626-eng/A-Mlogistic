@@ -6,6 +6,8 @@ const riderDeclined = document.querySelector('#rider-declined');
 const riderAuthSwitch = document.querySelector('.rider-auth-switch');
 let activeRider = null;
 const handoffFormState = new Map();
+let riderOrders = [];
+let riderPayouts = [];
 
 function setRiderAuthView(view) {
   riderForm.hidden = view !== 'apply';
@@ -70,6 +72,7 @@ async function renderRiderMessages() {
 }
 
 function renderDeliveries(orders, warning = '') {
+  riderOrders = orders;
   const completedEarnings = orders
     .filter(order => order.status === 'Delivered' && Number.isSafeInteger(order.riderEarningsNgn))
     .reduce((total, order) => total + order.riderEarningsNgn, 0);
@@ -78,6 +81,7 @@ function renderDeliveries(orders, warning = '') {
     currency: 'NGN',
     maximumFractionDigits: 0,
   }).format(completedEarnings);
+  renderWeeklyPayout();
 
   const list = document.querySelector('#assigned-deliveries');
   list.classList.remove('feedback-message');
@@ -169,6 +173,76 @@ function renderDeliveries(orders, warning = '') {
   });
 }
 
+function formatNgn(amount) {
+  return new Intl.NumberFormat('en-NG', {
+    style: 'currency',
+    currency: 'NGN',
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+function payoutWeekOptions() {
+  const today = new Date();
+  const mondayOffset = (today.getUTCDay() + 6) % 7;
+  const thisWeekMonday = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
+    - mondayOffset * 24 * 60 * 60 * 1000;
+  return Array.from({ length: 12 }, (_, index) => {
+    const start = new Date(thisWeekMonday - (index + 1) * 7 * 24 * 60 * 60 * 1000);
+    return start.toISOString().slice(0, 10);
+  });
+}
+
+function renderWeeklyPayout() {
+  const weekSelect = document.querySelector('#payout-week');
+  const summary = document.querySelector('#payout-summary');
+  const deliveriesList = document.querySelector('#payout-deliveries');
+  const history = document.querySelector('#payout-history');
+  const requestButton = document.querySelector('#request-payout');
+  const selectedWeek = weekSelect.value;
+  const startAt = Date.parse(`${selectedWeek}T00:00:00.000Z`);
+  const endAt = startAt + 7 * 24 * 60 * 60 * 1000;
+  const weekOrders = riderOrders.filter(order => order.status === 'Delivered'
+    && order.deliveredAt >= startAt
+    && order.deliveredAt < endAt
+    && Number.isSafeInteger(order.riderEarningsNgn));
+  const totalNgn = weekOrders.reduce((total, order) => total + order.riderEarningsNgn, 0);
+  const existingPayout = riderPayouts.find(payout => payout.week_start === selectedWeek);
+  const claimedOrderIds = new Set(riderPayouts
+    .filter(payout => payout.status !== 'Declined')
+    .flatMap(payout => payout.order_ids || []));
+  const availableOrders = weekOrders.filter(order => !claimedOrderIds.has(order.id));
+  const availableNgn = availableOrders.reduce((total, order) => total + order.riderEarningsNgn, 0);
+
+  summary.textContent = `${weekOrders.length} completed ${weekOrders.length === 1 ? 'delivery' : 'deliveries'} · ${formatNgn(totalNgn)} earned · ${formatNgn(availableNgn)} available to request`;
+  deliveriesList.replaceChildren();
+  if (!weekOrders.length) {
+    const empty = document.createElement('p');
+    empty.textContent = 'No completed deliveries recorded for this week.';
+    deliveriesList.append(empty);
+  } else {
+    weekOrders.forEach(order => {
+      const row = document.createElement('p');
+      row.textContent = `${order.reference} · ${order.quantity} × ${order.item} · ${formatNgn(order.riderEarningsNgn)}`;
+      deliveriesList.append(row);
+    });
+  }
+  history.replaceChildren();
+  if (existingPayout) {
+    const status = document.createElement('p');
+    status.className = 'payout-status';
+    status.textContent = `Request status: ${existingPayout.status} · ${formatNgn(existingPayout.amount_ngn)}`;
+    history.append(status);
+  }
+  requestButton.disabled = availableOrders.length === 0
+    || (existingPayout && existingPayout.status !== 'Declined');
+}
+
+async function refreshPayoutData() {
+  const result = await api.request('/api/rider/payouts');
+  riderPayouts = result.payouts;
+  renderWeeklyPayout();
+}
+
 function addHandoffControls(container, order, phase) {
   const label = phase === 'pickup' ? 'pickup' : 'delivery';
   const stateKey = `${order.id}:${phase}`;
@@ -204,11 +278,16 @@ function addHandoffControls(container, order, phase) {
   verifyButton.type = 'submit';
   verifyButton.className = 'submit-button';
   verifyButton.textContent = `Verify ${label} code`;
-  form.append(fieldLabel, verifyButton);
+  const resendButton = document.createElement('button');
+  resendButton.type = 'button';
+  resendButton.className = 'submit-button';
+  resendButton.textContent = `Email a new ${label} code`;
+  form.append(fieldLabel, verifyButton, resendButton);
   if (state.message) api.setStatus(message, state.message, state.messageState || 'success');
 
-  sendButton.addEventListener('click', async () => {
+  async function sendHandoffCode() {
     sendButton.disabled = true;
+    resendButton.disabled = true;
     message.textContent = '';
     try {
       const result = await api.request(`/api/rider/orders/${encodeURIComponent(order.id)}/handoff-code`, {
@@ -216,6 +295,8 @@ function addHandoffControls(container, order, phase) {
         body: JSON.stringify({ phase }),
       });
       state.open = true;
+      state.code = '';
+      codeInput.value = '';
       state.message = result.warning ? `${result.message} ${result.warning}` : result.message;
       state.messageState = result.warning ? 'error' : 'success';
       handoffFormState.set(stateKey, state);
@@ -230,28 +311,59 @@ function addHandoffControls(container, order, phase) {
       api.setStatus(message, error.message);
     } finally {
       sendButton.disabled = false;
+      resendButton.disabled = false;
     }
-  });
+  }
+  sendButton.addEventListener('click', sendHandoffCode);
+  resendButton.addEventListener('click', sendHandoffCode);
   form.addEventListener('submit', async event => {
     event.preventDefault();
     verifyButton.disabled = true;
     message.textContent = '';
+    let verification;
     try {
-      const verification = await api.request(`/api/rider/orders/${encodeURIComponent(order.id)}/verify-code`, {
+      verification = await api.request(`/api/rider/orders/${encodeURIComponent(order.id)}/verify-code`, {
         method: 'POST',
         body: JSON.stringify({ phase, code: codeInput.value }),
       });
-      handoffFormState.delete(stateKey);
-      const result = await api.request('/api/rider/deliveries');
-      renderDeliveries(result.orders, verification.warning || '');
     } catch (error) {
+      if (error.status === 409) {
+        handoffFormState.delete(stateKey);
+        try {
+          const result = await api.request('/api/rider/deliveries');
+          renderDeliveries(result.orders, 'This handoff step has already changed or is no longer available. Your delivery list has been refreshed.');
+        } catch {
+          form.hidden = true;
+          message.textContent = 'This handoff step is no longer available. Refresh your deliveries to see the current status.';
+          message.dataset.state = 'error';
+          sendButton.hidden = true;
+        }
+        return;
+      }
       state.open = true;
       state.code = codeInput.value;
-      state.message = error.message;
-      state.messageState = 'error';
+      state.message = error.status === 400
+        ? `${error.message} Check the latest code email or request a new code below.`
+        : error.message;
+      state.messageState = error.status === 400 ? 'info' : 'error';
       handoffFormState.set(stateKey, state);
-      api.setStatus(message, error.message);
+      api.setStatus(message, state.message, state.messageState);
       verifyButton.disabled = false;
+      return;
+    }
+
+    handoffFormState.delete(stateKey);
+    form.hidden = true;
+    sendButton.hidden = true;
+    api.setStatus(message, verification.warning
+      ? `Code accepted and delivery status updated. ${verification.warning}`
+      : 'Code accepted and delivery status updated.', verification.warning ? 'error' : 'success');
+    try {
+      const result = await api.request('/api/rider/deliveries');
+      renderDeliveries(result.orders, verification.warning || '');
+    } catch {
+      message.textContent = 'Code accepted and delivery status updated, but the delivery list could not refresh. Use Refresh to load the current status.';
+      message.dataset.state = 'info';
     }
   });
   container.append(sendButton, form, message);
@@ -276,14 +388,29 @@ async function showRider(rider) {
     document.querySelector('#dashboard-rider-name').textContent = rider.name.split(' ')[0];
     document.querySelector('#dashboard-rider-area').textContent = rider.area;
     document.querySelector('#dashboard-rider-vehicle').textContent = rider.vehicle;
-    const [deliveriesResult, messagesResult] = await Promise.allSettled([
+    const weekSelect = document.querySelector('#payout-week');
+    if (!weekSelect.options.length) {
+      payoutWeekOptions().forEach(weekStart => {
+        const weekEnd = new Date(Date.parse(`${weekStart}T00:00:00.000Z`) + 6 * 24 * 60 * 60 * 1000);
+        const option = document.createElement('option');
+        option.value = weekStart;
+        option.textContent = `${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${weekStart}T00:00:00.000Z`))} – ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'UTC' }).format(weekEnd)}`;
+        weekSelect.append(option);
+      });
+    }
+    const [deliveriesResult, messagesResult, payoutsResult] = await Promise.allSettled([
       api.request('/api/rider/deliveries'),
       renderRiderMessages(),
+      refreshPayoutData(),
     ]);
     if (deliveriesResult.status === 'fulfilled') renderDeliveries(deliveriesResult.value.orders);
     else api.setStatus(document.querySelector('#assigned-deliveries'), 'Could not load your assigned deliveries. Please refresh.');
     if (messagesResult.status === 'rejected') {
       api.setStatus(document.querySelector('#rider-notification-list'), 'Could not load rider messages. Please refresh.');
+    }
+    if (payoutsResult.status === 'rejected') {
+      api.setStatus(document.querySelector('#payout-notice'), `Could not load payout requests: ${payoutsResult.reason.message}`, 'error');
+      document.querySelector('#request-payout').disabled = true;
     }
     return;
   }
@@ -311,6 +438,26 @@ document.querySelectorAll('[data-rider-auth-view]').forEach(button => {
 
 document.querySelectorAll('[data-rider-view]').forEach(button => {
   button.addEventListener('click', () => setRiderView(button.dataset.riderView));
+});
+
+document.querySelector('#payout-week').addEventListener('change', renderWeeklyPayout);
+document.querySelector('#request-payout').addEventListener('click', async event => {
+  const button = event.currentTarget;
+  const status = document.querySelector('#payout-notice');
+  api.setStatus(status, '');
+  button.disabled = true;
+  try {
+    const result = await api.request('/api/rider/payouts', {
+      method: 'POST',
+      body: JSON.stringify({ weekStart: document.querySelector('#payout-week').value }),
+    });
+    await refreshPayoutData();
+    api.setStatus(status, result.warning || `Payout request submitted for ${formatNgn(result.payout.amount_ngn)}.`, result.warning ? 'error' : 'success');
+  } catch (error) {
+    api.setStatus(status, error.message);
+  } finally {
+    renderWeeklyPayout();
+  }
 });
 
 riderForm.addEventListener('submit', async event => {

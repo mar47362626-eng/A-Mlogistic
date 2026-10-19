@@ -78,6 +78,20 @@
               <article class="metric"><span class="metric-label">Vehicle</span><strong id="dashboard-rider-vehicle">—</strong><span class="metric-caption">Assigned rider profile</span></article>
               <article class="metric"><span class="metric-label">Earnings to date</span><strong id="dashboard-rider-earnings">NGN 0</strong><span class="metric-caption">Recorded for completed deliveries</span></article>
             </div>
+            <section class="rider-panel-card payout-panel">
+              <div class="panel-heading"><div><h2>Weekly earnings</h2><p>Review completed deliveries from a finished week and request your payout.</p></div></div>
+              <div class="payout-content">
+                <label for="payout-week">Completed week</label>
+                <div class="payout-controls">
+                  <select id="payout-week" aria-label="Completed payout week"></select>
+                  <button class="submit-button" id="request-payout" type="button">Request payout</button>
+                </div>
+                <p class="payout-summary" id="payout-summary" aria-live="polite">Loading weekly earnings…</p>
+                <p class="payout-notice feedback-message" id="payout-notice" role="status" aria-live="polite"></p>
+                <div class="payout-deliveries" id="payout-deliveries"></div>
+                <div class="payout-history" id="payout-history" aria-live="polite"></div>
+              </div>
+            </section>
             <section class="rider-panel-card overview-status"><div class="panel-heading"><div><h2>Dispatch status</h2><p>Your rider account is ready for updates.</p></div></div><p>No deliveries have been assigned yet. New work will appear in Deliveries.</p></section>
           </section>
           <section class="rider-dashboard-view" id="rider-deliveries-view" data-rider-view-panel="deliveries" aria-label="Deliveries" hidden>

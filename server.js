@@ -404,6 +404,41 @@ function estimateRiderEarnings(paymentAmountNgn) {
   return earningsNgn;
 }
 
+function calculatedRiderEarnings(order) {
+  if (order.status !== 'Delivered') return null;
+  if (Number.isSafeInteger(order.rider_earnings_ngn) && order.rider_earnings_ngn >= 0) {
+    return order.rider_earnings_ngn;
+  }
+  const verifiedPaymentNgn = order.transfer_amount_ngn ?? order.delivery_price_ngn;
+  return Number.isSafeInteger(verifiedPaymentNgn) && verifiedPaymentNgn >= 0
+    ? Math.round(verifiedPaymentNgn * 0.05)
+    : null;
+}
+
+function payoutWeek(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw requestError('Choose the Monday date for the payout week.');
+  }
+  const startAt = Date.parse(`${value}T00:00:00.000Z`);
+  if (!Number.isFinite(startAt) || new Date(startAt).toISOString().slice(0, 10) !== value
+    || new Date(startAt).getUTCDay() !== 1) {
+    throw requestError('The payout week must start on a valid Monday.');
+  }
+  const today = new Date();
+  const currentWeekStart = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate());
+  const daysSinceMonday = (today.getUTCDay() + 6) % 7;
+  if (startAt > currentWeekStart - daysSinceMonday * 24 * 60 * 60 * 1000) {
+    throw requestError('Payouts can only be requested for a week that has started.', 409);
+  }
+  const endAt = startAt + 7 * 24 * 60 * 60 * 1000;
+  return {
+    weekStart: value,
+    weekEnd: new Date(endAt - 1).toISOString().slice(0, 10),
+    startAt,
+    endAt,
+  };
+}
+
 function cookieValue(request, name) {
   const cookieHeader = request.headers.cookie || '';
   const entry = cookieHeader.split(';').map(value => value.trim()).find(value => value.startsWith(`${name}=`));
@@ -553,7 +588,7 @@ async function publicOrder(database, order, { includeTransferReference = false }
     deliveryPriceConfirmed: Boolean(order.delivery_price_confirmed ?? (order.delivery_price_ngn != null)),
     deliveryBaseFeeNgn: order.delivery_base_fee_ngn ?? null,
     deliveryRatePerKmNgn: order.delivery_rate_per_km_ngn ?? null,
-    riderEarningsNgn: order.rider_earnings_ngn ?? null,
+    riderEarningsNgn: calculatedRiderEarnings(order),
     paymentStatus: order.payment_status || null,
     paymentSubmittedAmountNgn: order.transfer_amount_ngn ?? null,
     ...(includeTransferReference ? { transferReference: order.transfer_reference || '' } : {}),
@@ -568,9 +603,8 @@ async function publicOrder(database, order, { includeTransferReference = false }
   };
 }
 
-async function orderStatusEmailTasks(database, order, status, sendEmail) {
+async function orderStatusEmailTasks(database, order, status, sendEmail, adminRecipients = []) {
   const customer = await database.find('users', user => user.id === order.user_id);
-  if (!customer?.email) return [];
   const descriptions = {
     Confirmed: {
       title: 'Your delivery is confirmed',
@@ -596,7 +630,7 @@ async function orderStatusEmailTasks(database, order, status, sendEmail) {
   const update = descriptions[status];
   if (!update) return [];
   const details = [
-    `Hello ${customer.name || 'there'},`,
+    `Hello ${customer?.name || 'there'},`,
     update.message,
     `Item: ${order.quantity} × ${order.item}`,
     `Pickup: ${order.pickup}`,
@@ -622,11 +656,43 @@ async function orderStatusEmailTasks(database, order, status, sendEmail) {
     }
   }
   const orderContent = orderEmailContent(order, update.title, details);
-  const tasks = [sendEmail({
+  const tasks = customer?.email ? [sendEmail({
     to: customer.email,
     subject: `${update.title} · ${order.reference}`,
     ...orderContent,
-  })];
+  })] : [];
+  if (status === 'Delivered') {
+    const rider = order.rider_id
+      ? await database.find('riders', record => record.id === order.rider_id)
+      : null;
+    const earnings = order.rider_earnings_ngn == null ? 'Not available' : formatNaira(order.rider_earnings_ngn);
+    if (rider?.email) {
+      tasks.push(sendEmail({
+        to: rider.email,
+        subject: `Delivery completed · ${order.reference}`,
+        ...orderEmailContent(order, 'Delivery completed', [
+          `Hello ${rider.name}, delivery ${order.reference} has been marked complete.`,
+          `Item: ${order.quantity} × ${order.item}`,
+          `Pickup: ${order.pickup}`,
+          `Delivery: ${order.delivery}`,
+          `Your recorded earnings: ${earnings}.`,
+          'Your completed delivery is included in the weekly earnings available to request from your rider dashboard.',
+        ]),
+      }));
+    }
+    tasks.push(...adminRecipients.map(email => sendEmail({
+      to: email,
+      subject: `Delivery completed · ${order.reference}`,
+      ...orderEmailContent(order, 'Rider delivery completed', [
+        `Delivery ${order.reference} has been completed.`,
+        `Rider: ${rider?.name || 'Not assigned'} (${rider?.email || 'No rider email'})`,
+        `Item: ${order.quantity} × ${order.item}`,
+        `Pickup: ${order.pickup}`,
+        `Delivery: ${order.delivery}`,
+        `Rider earnings (5%): ${earnings}.`,
+      ]),
+    })));
+  }
   if (status === 'Collected' && order.delivery_email) {
     const recipientTitle = 'Your package is on its way';
     tasks.push(sendEmail({
@@ -955,17 +1021,25 @@ function createApp(database, {
         registered_at: registeredAt,
         reviewed_at: null,
       });
-      let notificationWarning = false;
-      try {
-        const content = emailContent('Rider application received', [
-          `Hello ${name}, we have received your rider application.`,
-          `Application reference: ${reference}. We will email you when it has been reviewed.`,
-        ]);
-        await sendEmail({ to: email, subject: 'Rider application received', ...content });
-      } catch (error) {
-        console.error('Rider application email notification failed:', error);
-        notificationWarning = true;
-      }
+      const content = emailContent('Rider application received', [
+        `Hello ${name}, we have received your rider application.`,
+        `Application reference: ${reference}. We will email you when it has been reviewed.`,
+      ]);
+      const adminContent = emailContent('New rider registration', [
+        `A new rider application has been submitted.`,
+        `Rider: ${name}`,
+        `Email: ${email}`,
+        `Phone: ${phone}`,
+        `Application reference: ${reference}`,
+      ]);
+      const notificationWarning = await sendNotifications([
+        sendEmail({ to: email, subject: 'Rider application received', ...content }),
+        ...(await adminEmails()).map(adminEmail => sendEmail({
+          to: adminEmail,
+          subject: `New rider registration · ${reference}`,
+          ...adminContent,
+        })),
+      ], 'Rider application');
       await createSession(database, response, 'rider', id);
       response.status(201).json({
         rider: publicRider(await database.find('riders', rider => rider.id === id)),
@@ -1015,6 +1089,85 @@ function createApp(database, {
       .sort((first, second) => second.created_at - first.created_at)
       .map(({ recipients, ...notification }) => notification);
     response.json({ notifications: messages });
+  });
+
+  app.get('/api/rider/payouts', requireRider, async (request, response) => {
+    const rider = await database.find('riders', record => record.id === request.auth.principalId);
+    if (!rider || rider.status !== 'Approved') throw requestError('Your rider account is not approved.', 403);
+    const payouts = (await database.list('payouts', payout => payout.rider_id === rider.id))
+      .sort((first, second) => second.requested_at - first.requested_at);
+    response.json({ payouts });
+  });
+
+  app.post('/api/rider/payouts', requireRider, async (request, response, next) => {
+    try {
+      const rider = await database.find('riders', record => record.id === request.auth.principalId);
+      if (!rider || rider.status !== 'Approved') throw requestError('Your rider account is not approved.', 403);
+      const week = payoutWeek(request.body.weekStart);
+      const reference = `${rider.id}:${week.weekStart}`;
+      const existingPayout = await database.find('payouts', payout => payout.reference === reference);
+      if (existingPayout && existingPayout.status !== 'Declined') {
+        throw requestError('A payout request for this week has already been submitted.', 409);
+      }
+      const existingPayouts = await database.list('payouts', payout => payout.status !== 'Declined');
+      const claimedOrderIds = new Set(existingPayouts.flatMap(payout => payout.order_ids || []));
+      const eligibleOrders = (await database.list('orders', order => order.rider_id === rider.id
+        && order.status === 'Delivered'
+        && order.delivered_at >= week.startAt
+        && order.delivered_at < week.endAt
+        && !claimedOrderIds.has(order.id)
+        && calculatedRiderEarnings(order) !== null));
+      const amountNgn = eligibleOrders.reduce((total, order) => total + calculatedRiderEarnings(order), 0);
+      if (!eligibleOrders.length || amountNgn === 0) {
+        throw requestError('There are no unrequested completed delivery earnings for this week.', 409);
+      }
+      const requestedAt = Date.now();
+      const payout = {
+        ...(existingPayout ? { id: existingPayout.id } : { id: crypto.randomUUID() }),
+        reference,
+        rider_id: rider.id,
+        week_start: week.weekStart,
+        week_end: week.weekEnd,
+        order_ids: eligibleOrders.map(order => order.id),
+        amount_ngn: amountNgn,
+        status: 'Pending',
+        requested_at: requestedAt,
+        updated_at: requestedAt,
+      };
+      const savedPayout = existingPayout
+        ? await database.update('payouts', record => record.id === existingPayout.id, () => payout)
+        : await database.insert('payouts', payout);
+      const details = [
+        `Rider ${rider.name} (${rider.email}) requested a weekly payout.`,
+        `Week: ${week.weekStart} to ${week.weekEnd}`,
+        `Amount requested: ${formatNaira(amountNgn)}`,
+        `Completed deliveries: ${eligibleOrders.map(order => `${order.reference} · ${order.quantity} × ${order.item} · ${formatNaira(calculatedRiderEarnings(order))}`).join('; ')}`,
+      ];
+      const adminRecipients = await adminEmails();
+      const emailTasks = adminRecipients.map(email => sendEmail({
+        to: email,
+        subject: `Weekly payout requested · ${rider.name}`,
+        ...emailContent('Weekly rider payout requested', details),
+      }));
+      emailTasks.push(sendEmail({
+        to: rider.email,
+        subject: 'Your weekly payout request was received',
+        ...emailContent('Payout request received', [
+          `Hello ${rider.name}, your request for ${formatNaira(amountNgn)} was received.`,
+          `Week: ${week.weekStart} to ${week.weekEnd}`,
+          `${eligibleOrders.length} completed ${eligibleOrders.length === 1 ? 'delivery' : 'deliveries'} are included. A&M will update your request after review.`,
+        ]),
+      }));
+      const notificationWarning = await sendNotifications(emailTasks, 'Rider payout request');
+      response.status(existingPayout ? 200 : 201).json({
+        payout: savedPayout,
+        ...(notificationWarning ? { warning: 'The payout request was saved, but one or more emails could not be sent.' } : {}),
+      });
+    } catch (error) {
+      next(error.code === 'JSON_CONSTRAINT_UNIQUE' || error.code === '23505'
+        ? requestError('A payout request for this week has already been submitted.', 409)
+        : error);
+    }
   });
 
   app.get('/api/customer/orders', requireCustomer, async (request, response) => {
@@ -1287,6 +1440,57 @@ function createApp(database, {
     response.json({ riders });
   });
 
+  app.get('/api/admin/payouts', requireAdmin, async (request, response) => {
+    const payouts = (await database.list('payouts'))
+      .sort((first, second) => second.requested_at - first.requested_at);
+    const enrichedPayouts = await Promise.all(payouts.map(async payout => {
+      const rider = await database.find('riders', record => record.id === payout.rider_id);
+      const orders = await Promise.all((payout.order_ids || []).map(async id => {
+        const order = await database.find('orders', record => record.id === id);
+        return order ? publicOrder(database, order) : null;
+      }));
+      return {
+        ...payout,
+        riderName: rider?.name || 'Unknown rider',
+        riderEmail: rider?.email || '',
+        orders: orders.filter(Boolean),
+      };
+    }));
+    response.json({ payouts: enrichedPayouts });
+  });
+
+  app.patch('/api/admin/payouts/:id/status', requireAdmin, async (request, response, next) => {
+    try {
+      const status = request.body.status;
+      if (!['Paid', 'Declined'].includes(status)) throw requestError('Choose Paid or Declined.');
+      const payout = await database.find('payouts', record => record.id === request.params.id);
+      if (!payout) throw requestError('Payout request not found.', 404);
+      if (payout.status !== 'Pending') throw requestError('Only pending payout requests can be updated.', 409);
+      const updatedAt = Date.now();
+      const updatedPayout = await database.update('payouts', record => record.id === payout.id, record => ({
+        ...record,
+        status,
+        updated_at: updatedAt,
+      }));
+      const rider = await database.find('riders', record => record.id === payout.rider_id);
+      const notificationWarning = rider?.email && await sendNotifications([sendEmail({
+        to: rider.email,
+        subject: `Weekly payout ${status.toLowerCase()}`,
+        ...emailContent(`Weekly payout ${status.toLowerCase()}`, [
+          `Hello ${rider.name}, your payout request for ${formatNaira(payout.amount_ngn)} was ${status.toLowerCase()}.`,
+          `Week: ${payout.week_start} to ${payout.week_end}`,
+          status === 'Paid' ? 'The payout has been marked as paid by A&M.' : 'Please contact A&M Logistics if you would like more information.',
+        ]),
+      })], 'Payout status');
+      response.json({
+        payout: updatedPayout,
+        ...(notificationWarning ? { warning: 'The payout status was updated, but the rider email could not be sent.' } : {}),
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   app.get('/api/admin/registrations', requireAdmin, async (request, response) => {
     const users = await database.list('users', user => user.role === 'customer');
     const riders = await database.list('riders');
@@ -1430,7 +1634,9 @@ function createApp(database, {
       const assignmentConfirmed = status === 'Confirmed'
         && riderId
         && (order.status !== 'Confirmed' || riderId !== order.rider_id);
-      const emailTasks = statusChanged ? await orderStatusEmailTasks(database, updatedOrder, status, sendEmail) : [];
+      const emailTasks = statusChanged
+        ? await orderStatusEmailTasks(database, updatedOrder, status, sendEmail, status === 'Delivered' ? await adminEmails() : [])
+        : [];
       if (assignmentConfirmed) {
         const rider = await database.find('riders', record => record.id === riderId);
         const content = orderEmailContent(order, 'A delivery has been assigned to you', [
@@ -1604,7 +1810,13 @@ function createApp(database, {
         [attemptsField]: 0,
       }));
       const notificationWarning = await sendNotifications(
-        await orderStatusEmailTasks(database, updatedOrder, newStatus, sendEmail),
+        await orderStatusEmailTasks(
+          database,
+          updatedOrder,
+          newStatus,
+          sendEmail,
+          newStatus === 'Delivered' ? await adminEmails() : [],
+        ),
         'Verified handoff status',
       );
       response.json({
@@ -1690,7 +1902,7 @@ function createApp(database, {
     if (error instanceof SyntaxError && 'body' in error) {
       return response.status(400).json({ error: 'Request body must contain valid JSON.' });
     }
-    if (error.code === 'JSON_CONSTRAINT_UNIQUE' || error.code === '23505' || error.status === 409) {
+    if (error.code === 'JSON_CONSTRAINT_UNIQUE' || error.code === '23505') {
       return response.status(409).json({ error: 'An account or application already exists for this email.' });
     }
     if (error.status) return response.status(error.status).json({ error: error.message });

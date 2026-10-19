@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { DatabaseSync } = require('node:sqlite');
 
-const collections = ['users', 'riders', 'orders', 'notifications', 'sessions'];
+const collections = ['users', 'riders', 'orders', 'notifications', 'sessions', 'payouts'];
 
 function uniqueError() {
   const error = new Error('A record with a unique field already exists.');
@@ -114,7 +114,8 @@ function createDatabase(directory = path.join(__dirname, 'data')) {
       if ((normalized.id && state[name].some(existing => existing.id === normalized.id))
         || (name === 'sessions' && state[name].some(existing => existing.token_hash === normalized.token_hash))
         || (name === 'orders' && state[name].some(existing => existing.reference === normalized.reference))
-        || (name === 'riders' && state[name].some(existing => existing.reference === normalized.reference))) {
+        || (name === 'riders' && state[name].some(existing => existing.reference === normalized.reference))
+        || (name === 'payouts' && state[name].some(existing => existing.reference === normalized.reference))) {
         throw uniqueError();
       }
       state[name].push(normalized);

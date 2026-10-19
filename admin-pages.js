@@ -2,6 +2,7 @@ const pageType = document.body.dataset.adminPage;
 let records = [];
 let savedNotifications = [];
 let registrations = [];
+let payoutRequests = [];
 
 function prettyDate(value, withTime = false) {
   if (!value) return 'Not recorded';
@@ -121,7 +122,7 @@ function renderDelivered() {
     const row = document.createElement('tr');
     const cell = document.createElement('td');
     cell.className = 'empty-cell';
-    cell.colSpan = 6;
+    cell.colSpan = 8;
     cell.textContent = 'No delivered orders yet. Update an order to Delivered in the Orders workspace.';
     row.append(cell);
     rows.append(row);
@@ -132,9 +133,73 @@ function renderDelivered() {
     addCell(row, order.reference, 'request-ref');
     addCell(row, `${order.quantity} × ${order.item}`);
     addCell(row, order.email);
+    addCell(row, order.riderName || order.riderEmail || 'Not assigned');
+    addCell(row, order.riderEarningsNgn == null ? 'Not calculated' : formatNgn(order.riderEarningsNgn));
     addCell(row, prettyDate(order.date));
     addCell(row, `${order.pickup} → ${order.delivery}`);
     addCell(row, prettyDate(order.deliveredAt || order.updatedAt || order.createdAt, true));
+    rows.append(row);
+  });
+}
+
+function formatNgn(amount) {
+  return new Intl.NumberFormat('en-NG', {
+    style: 'currency',
+    currency: 'NGN',
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
+
+function renderPayouts() {
+  const rows = document.querySelector('#payout-rows');
+  document.querySelector('#payout-summary').textContent = `${payoutRequests.length} payout ${payoutRequests.length === 1 ? 'request' : 'requests'}`;
+  rows.replaceChildren();
+  if (!payoutRequests.length) {
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
+    cell.className = 'empty-cell';
+    cell.colSpan = 6;
+    cell.textContent = 'No weekly payout requests yet.';
+    row.append(cell);
+    rows.append(row);
+    return;
+  }
+  payoutRequests.forEach(payout => {
+    const row = document.createElement('tr');
+    addCell(row, `${payout.riderName} · ${payout.riderEmail}`);
+    addCell(row, `${payout.week_start} – ${payout.week_end}`);
+    addCell(row, (payout.orders || []).map(order => `${order.reference} · ${order.quantity} × ${order.item}`).join('; '));
+    addCell(row, formatNgn(payout.amount_ngn));
+    addCell(row, prettyDate(payout.requested_at, true));
+    const actionCell = document.createElement('td');
+    if (payout.status === 'Pending') {
+      const actions = document.createElement('div');
+      actions.className = 'payout-action';
+      [['Paid', 'Mark paid'], ['Declined', 'Decline']].forEach(([status, label]) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = label;
+        button.addEventListener('click', async () => {
+          actions.querySelectorAll('button').forEach(action => { action.disabled = true; });
+          try {
+            const result = await api.request(`/api/admin/payouts/${encodeURIComponent(payout.id)}/status`, {
+              method: 'PATCH',
+              body: JSON.stringify({ status }),
+            });
+            await refreshPage();
+            if (result.warning) document.querySelector('#payout-summary').textContent = result.warning;
+          } catch (error) {
+            document.querySelector('#payout-summary').textContent = error.message;
+            actions.querySelectorAll('button').forEach(action => { action.disabled = false; });
+          }
+        });
+        actions.append(button);
+      });
+      actionCell.append(actions);
+    } else {
+      actionCell.textContent = payout.status;
+    }
+    row.append(actionCell);
     rows.append(row);
   });
 }
@@ -231,8 +296,14 @@ async function refreshPage() {
       records = (await api.request('/api/admin/riders')).riders;
       renderRiders();
     } else if (pageType === 'delivered') {
-      records = (await api.request('/api/admin/orders')).orders;
+      const [ordersResult, payoutsResult] = await Promise.all([
+        api.request('/api/admin/orders'),
+        api.request('/api/admin/payouts'),
+      ]);
+      records = ordersResult.orders;
+      payoutRequests = payoutsResult.payouts;
       renderDelivered();
+      renderPayouts();
     } else if (pageType === 'notifications') {
       const [notificationResult, registrationResult] = await Promise.all([
         api.request('/api/admin/notifications'),
