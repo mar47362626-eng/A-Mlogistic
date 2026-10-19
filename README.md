@@ -25,7 +25,7 @@ Production, including the app running on Render, uses Supabase PostgreSQL. The a
 - The public Render service URL is configured in `api-client.js` as `window.API_BASE_URL` before publishing the static GitHub Pages frontend; this is public configuration, not a secret.
 - Bank transfer details can be entered and saved from the **Customer transfer account** form at the top of the admin Orders page. Customers see the saved bank name, account name, account number, confirmed amount, and order reference in their payment instructions. `BANK_NAME`, `BANK_ACCOUNT_NAME`, and `BANK_ACCOUNT_NUMBER` remain optional Render environment fallbacks.
 - `DELIVERY_BASE_FEE_NGN` and `DELIVERY_RATE_PER_KM_NGN`: optional estimate settings; defaults are `2500` and `1000`.
-- `RIDER_RATE_PER_KM_NGN`: rider earnings per started kilometre; defaults to `1500`. Earnings are recorded only when delivery is completed, using the server-calculated route distance.
+- Rider earnings are 5% of the amount the customer reports paying and A&M verifies. Earnings are recorded when delivery is completed and rounded to the nearest whole naira.
 
 The server requires valid Supabase credentials in production and does not silently fall back to local JSON files. Local development can continue using JSON storage without Supabase credentials. Existing local JSON/SQLite data is not copied automatically; migrate existing records before switching production traffic if you need to retain them. Do not put `.env` or any service-role key in GitHub.
 

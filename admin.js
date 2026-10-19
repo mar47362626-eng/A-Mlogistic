@@ -208,7 +208,7 @@ function renderDetail(order, message = '', messageState = 'success') {
     if (order.paymentSubmittedAmountNgn != null) {
       addDetailField(paymentFields, 'Customer says they transferred', formatNgn(order.paymentSubmittedAmountNgn));
     }
-    if (order.riderEarningsNgn != null) addDetailField(paymentFields, 'Rider earnings', formatNgn(order.riderEarningsNgn));
+    if (order.riderEarningsNgn != null) addDetailField(paymentFields, 'Rider earnings (5% of verified payment)', formatNgn(order.riderEarningsNgn));
     if (order.transferReference) addDetailField(paymentFields, 'Customer transaction reference', order.transferReference);
     payment.append(paymentFields);
     if (order.paymentSubmittedAmountNgn != null && order.paymentSubmittedAmountNgn !== order.deliveryPriceNgn) {

@@ -118,23 +118,29 @@ function renderDeliveries(orders, warning = '') {
     date.textContent = `Pickup date: ${order.date}`;
     item.append(photo, heading, status, pickup, pickupEmail, delivery, date);
     const earnings = document.createElement('p');
-    earnings.textContent = order.riderEarningsNgn == null
-      ? 'Earnings: recorded after delivery is completed'
-      : `Earnings: ${new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(order.riderEarningsNgn)}`;
+    const paidAmountNgn = order.paymentSubmittedAmountNgn ?? order.deliveryPriceNgn;
+    const formatNgn = amount => new Intl.NumberFormat('en-NG', {
+      style: 'currency',
+      currency: 'NGN',
+      maximumFractionDigits: 0,
+    }).format(amount);
+    if (order.riderEarningsNgn != null) {
+      earnings.textContent = `Earnings (5%): ${formatNgn(order.riderEarningsNgn)}`;
+    } else if (order.paymentStatus === 'paid' && Number.isSafeInteger(paidAmountNgn)) {
+      earnings.textContent = `Expected earnings (5%): ${formatNgn(Math.round(paidAmountNgn * 0.05))} · recorded after delivery is completed`;
+    } else {
+      earnings.textContent = 'Earnings: 5% of the payment verified by A&M, recorded after delivery is completed';
+    }
     item.append(earnings);
     if (order.deliveryPriceNgn != null) {
       const paymentStatus = document.createElement('p');
-      const amount = new Intl.NumberFormat('en-NG', {
-        style: 'currency',
-        currency: 'NGN',
-        maximumFractionDigits: 0,
-      }).format(order.deliveryPriceNgn);
+      const amount = formatNgn(paidAmountNgn);
       const paymentState = order.paymentStatus === 'paid'
         ? 'verified by A&M'
         : order.paymentStatus === 'proof_submitted'
           ? 'reference submitted · awaiting A&M verification'
           : 'awaiting customer payment';
-      paymentStatus.textContent = `Customer payment: ${amount} · ${paymentState}`;
+      paymentStatus.textContent = `Customer payment amount: ${amount} · ${paymentState}`;
       item.append(paymentStatus);
     }
     if (order.status === 'Confirmed' && !order.pickupVerified) {

@@ -43,7 +43,6 @@ before(async () => {
   process.env.BANK_ACCOUNT_NUMBER = '0123456789';
   process.env.DELIVERY_BASE_FEE_NGN = '2500';
   process.env.DELIVERY_RATE_PER_KM_NGN = '1000';
-  process.env.RIDER_RATE_PER_KM_NGN = '1500';
   delete process.env.GOOGLE_MAPS_API_KEY;
   emails = [];
   failDeliveredEmail = false;
@@ -728,6 +727,7 @@ test('customer and rider workflows share orders, assignment, and notifications',
   const riderPaidOrder = riderOrdersAfterPayment.result.orders.find(candidate => candidate.id === order.result.order.id);
   assert.equal(riderPaidOrder.paymentStatus, 'paid');
   assert.equal(riderPaidOrder.deliveryPriceNgn, 5500);
+  assert.equal(riderPaidOrder.paymentSubmittedAmountNgn, 5500);
   const riderPhoto = await fetch(`${baseUrl}/api/orders/${order.result.order.id}/photo`, {
     headers: { Cookie: riderLogin.cookie },
   });
@@ -810,7 +810,8 @@ test('customer and rider workflows share orders, assignment, and notifications',
   assert.equal(deliveryVerified.result.order.status, 'Delivered');
   assert.equal(deliveryVerified.result.order.pickupVerified, true);
   assert.equal(deliveryVerified.result.order.deliveryVerified, true);
-  assert.equal(deliveryVerified.result.order.riderEarningsNgn, 1500 * Math.ceil(2.4));
+  assert.equal(deliveryVerified.result.order.riderEarningsNgn, 275);
+  assert.equal(deliveryVerified.result.order.riderEarningsNgn, Math.round(riderPaidOrder.paymentSubmittedAmountNgn * 0.05));
   assert.match(deliveryVerified.result.warning, /status email could not be sent/i);
   assert.ok(!emails.some(email => email.to === 'customer@example.com' && /delivered/i.test(email.subject)));
 

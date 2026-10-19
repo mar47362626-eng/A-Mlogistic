@@ -393,16 +393,11 @@ function estimateDeliveryFee(distanceKm) {
   return estimatedFeeNgn;
 }
 
-function estimateRiderEarnings(distanceKm) {
-  const configuredRate = process.env.RIDER_RATE_PER_KM_NGN;
-  const ratePerKmNgn = configuredRate === undefined ? 1500 : Number(configuredRate);
-  if (!Number.isSafeInteger(ratePerKmNgn) || ratePerKmNgn < 1 || ratePerKmNgn > 1_000_000_000) {
-    throw requestError('RIDER_RATE_PER_KM_NGN must be a whole-naira amount between 1 and 1,000,000,000.', 503);
+function estimateRiderEarnings(paymentAmountNgn) {
+  if (!Number.isSafeInteger(paymentAmountNgn) || paymentAmountNgn < 0 || paymentAmountNgn > 1_000_000_000) {
+    throw requestError('Rider earnings cannot be calculated because the verified payment amount is invalid.', 409);
   }
-  if (!Number.isFinite(distanceKm) || distanceKm <= 0 || distanceKm > 100_000) {
-    throw requestError('Rider earnings cannot be calculated because the delivery distance is unavailable.', 409);
-  }
-  const earningsNgn = ratePerKmNgn * Math.ceil(distanceKm);
+  const earningsNgn = Math.round(paymentAmountNgn * 0.05);
   if (!Number.isSafeInteger(earningsNgn)) {
     throw requestError('Rider earnings exceed the supported amount.', 409);
   }
@@ -1419,7 +1414,7 @@ function createApp(database, {
       const deliveredAt = status === 'Delivered' ? order.delivered_at || updatedAt : null;
       const statusChanged = status !== order.status;
       const riderEarningsNgn = status === 'Delivered' && order.rider_earnings_ngn == null
-        ? estimateRiderEarnings(deliveryDistanceKm)
+        ? estimateRiderEarnings(order.transfer_amount_ngn ?? deliveryPriceNgn)
         : order.rider_earnings_ngn ?? null;
       const updatedOrder = await database.update('orders', record => record.id === request.params.id, record => ({
         ...record,
@@ -1596,7 +1591,7 @@ function createApp(database, {
       const newStatus = isPickup ? 'Collected' : 'Delivered';
       const riderEarningsNgn = isPickup
         ? order.rider_earnings_ngn ?? null
-        : order.rider_earnings_ngn ?? estimateRiderEarnings(order.delivery_distance_km);
+        : order.rider_earnings_ngn ?? estimateRiderEarnings(order.transfer_amount_ngn ?? order.delivery_price_ngn);
       const updatedOrder = await database.update('orders', record => record.id === order.id, record => ({
         ...record,
         status: newStatus,
