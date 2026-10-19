@@ -234,16 +234,28 @@ function requestError(message, status = 400) {
   return error;
 }
 
-function bankTransferDetails() {
+async function bankTransferDetails(database) {
+  const administrators = await database.list('users', user => user.role === 'admin');
+  const savedDetails = administrators.find(user => user.payment_settings)?.payment_settings;
   const details = {
-    bankName: process.env.BANK_NAME?.trim(),
-    accountName: process.env.BANK_ACCOUNT_NAME?.trim(),
-    accountNumber: process.env.BANK_ACCOUNT_NUMBER?.trim(),
+    bankName: savedDetails?.bank_name?.trim() || process.env.BANK_NAME?.trim(),
+    accountName: savedDetails?.account_name?.trim() || process.env.BANK_ACCOUNT_NAME?.trim(),
+    accountNumber: savedDetails?.account_number?.trim() || process.env.BANK_ACCOUNT_NUMBER?.trim(),
   };
   if (Object.values(details).some(value => !value)) {
     throw requestError('Bank transfer details are not configured. Contact A&M Logistics.', 503);
   }
   return details;
+}
+
+async function adminPaymentSettings(database) {
+  const administrators = await database.list('users', user => user.role === 'admin');
+  const savedDetails = administrators.find(user => user.payment_settings)?.payment_settings;
+  return {
+    bankName: savedDetails?.bank_name || process.env.BANK_NAME?.trim() || '',
+    accountName: savedDetails?.account_name || process.env.BANK_ACCOUNT_NAME?.trim() || '',
+    accountNumber: savedDetails?.account_number || process.env.BANK_ACCOUNT_NUMBER?.trim() || '',
+  };
 }
 
 function formatNaira(amount) {
@@ -591,7 +603,7 @@ async function orderStatusEmailTasks(database, order, status, sendEmail) {
     `Delivery: ${order.delivery}`,
   ];
   if (status === 'Confirmed' && order.delivery_price_ngn != null) {
-    const bank = bankTransferDetails();
+    const bank = await bankTransferDetails(database);
     details.push(
       ...(order.delivery_distance_km != null ? [`Approximate route distance: ${order.delivery_distance_km} km.`] : []),
       `Delivery fee confirmed by A&M: ${formatNaira(order.delivery_price_ngn)}.`,
@@ -1119,7 +1131,7 @@ function createApp(database, {
       throw requestError('Payment instructions are available after A&M confirms your priced order.', 409);
     }
     response.json({
-      bank: bankTransferDetails(),
+      bank: await bankTransferDetails(database),
       amountNgn: order.delivery_price_ngn,
       distanceKm: order.delivery_distance_km,
       paymentReference: order.reference,
@@ -1137,12 +1149,16 @@ function createApp(database, {
         throw requestError('You can submit payment details after A&M confirms your priced order.', 409);
       }
       if (order.payment_status === 'paid') throw requestError('This order has already been marked as paid.', 409);
+      if (request.body.paidConfirmation !== true) {
+        throw requestError('Confirm that you have completed the bank transfer before submitting its reference.');
+      }
       const transferReference = textField(request.body, 'transferReference', { min: 3, max: 100 });
       const updatedOrder = await database.update('orders', record => record.id === order.id, record => ({
         ...record,
         payment_status: 'proof_submitted',
         transfer_reference: transferReference,
         transfer_submitted_at: Date.now(),
+        paid_confirmed_at: Date.now(),
         updated_at: Date.now(),
       }));
       const customer = await database.find('users', user => user.id === order.user_id);
@@ -1195,6 +1211,43 @@ function createApp(database, {
       .sort((first, second) => second.created_at - first.created_at)
       .map(order => publicOrder(database, order, { includeTransferReference: true }));
     response.json({ orders: await Promise.all(orders) });
+  });
+
+  app.get('/api/admin/payment-settings', requireAdmin, async (request, response) => {
+    response.json({ settings: await adminPaymentSettings(database) });
+  });
+
+  app.put('/api/admin/payment-settings', requireAdmin, async (request, response, next) => {
+    try {
+      const bankName = textField(request.body, 'bankName', { max: 100 });
+      const accountName = textField(request.body, 'accountName', { max: 120 });
+      const accountNumber = textField(request.body, 'accountNumber', { min: 10, max: 10 });
+      if (!/^\d{10}$/.test(accountNumber)) {
+        throw requestError('Enter the 10-digit bank account number.');
+      }
+      const administrators = await database.list('users', user => user.role === 'admin');
+      if (!administrators.length) throw requestError('Admin account not found.', 404);
+      const settings = {
+        bank_name: bankName,
+        account_name: accountName,
+        account_number: accountNumber,
+        updated_at: Date.now(),
+      };
+      await Promise.all(administrators.map(admin => database.update(
+        'users',
+        user => user.id === admin.id,
+        user => ({ ...user, payment_settings: settings }),
+      )));
+      response.json({
+        settings: {
+          bankName: settings.bank_name,
+          accountName: settings.account_name,
+          accountNumber: settings.account_number,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.get('/api/admin/users', requireAdmin, async (request, response) => {
@@ -1324,7 +1377,7 @@ function createApp(database, {
       if (status === 'Confirmed' && !deliveryPriceConfirmed) {
         throw requestError('Review and save the final delivery fee before confirming this order.');
       }
-      if (status === 'Confirmed') bankTransferDetails();
+      if (status === 'Confirmed') await bankTransferDetails(database);
       if (status === 'Collected' && !order.pickup_verified_at) {
         throw requestError('Only the assigned rider can mark a pickup collected after verifying its code.', 409);
       }
@@ -1648,6 +1701,7 @@ async function seedAdmin(database) {
     password_hash: credentials.hash,
     role: 'admin',
     registered_at: admin?.registered_at || Date.now(),
+    ...(admin?.payment_settings ? { payment_settings: admin.payment_settings } : {}),
   };
   if (admin) {
     await database.update('users', user => user.id === admin.id, () => record);

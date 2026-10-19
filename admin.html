@@ -50,6 +50,17 @@
 
     <div class="storage-notice" role="note"><strong>Operations workspace</strong><span>Orders, customer accounts, and rider updates are saved on the server and shared across devices.</span></div>
 
+    <section class="payment-settings-panel" aria-labelledby="payment-settings-title">
+      <div class="view-heading"><div><h2 id="payment-settings-title">Customer transfer account</h2><p>Customers will see these details after you confirm their delivery fee and assign a rider.</p></div></div>
+      <form id="payment-settings-form" class="payment-settings-form">
+        <label>Bank name<input name="bankName" required maxlength="100" autocomplete="off" placeholder="e.g. Access Bank"></label>
+        <label>Account name<input name="accountName" required maxlength="120" autocomplete="off" placeholder="Name on the account"></label>
+        <label>Account number<input name="accountNumber" required inputmode="numeric" pattern="[0-9]{10}" minlength="10" maxlength="10" autocomplete="off" placeholder="10-digit account number"></label>
+        <button class="button button-dark" type="submit">Save bank details</button>
+        <p class="status-message payment-settings-status" id="payment-settings-status" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+
     <section class="metric-grid" aria-label="A and M workspace summary">
       <article class="metric"><span class="metric-label">All requests</span><strong id="metric-total">0</strong><span class="metric-caption">Saved on the server</span></article>
       <article class="metric"><span class="metric-label">Registered users</span><strong id="metric-users">0</strong><span class="metric-caption">Customer accounts</span></article>

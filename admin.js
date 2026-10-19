@@ -271,10 +271,11 @@ function renderDetail(order, message = '', messageState = 'success') {
     payment.append(quoteForm);
   }
   if (order.paymentStatus === 'proof_submitted') {
+    addDetailCopy(payment, 'Before verifying', 'Check the bank account and confirm the exact amount has arrived. A submitted transaction reference is not proof of payment.');
     const verifyButton = document.createElement('button');
     verifyButton.type = 'button';
     verifyButton.className = 'button button-dark';
-    verifyButton.textContent = 'Verify payment';
+    verifyButton.textContent = 'Confirm bank payment';
     const verifyStatus = document.createElement('p');
     verifyStatus.className = 'status-message';
     verifyStatus.setAttribute('role', 'status');
@@ -296,7 +297,7 @@ function renderDetail(order, message = '', messageState = 'success') {
       } catch (error) {
         api.setStatus(verifyStatus, error.message);
         verifyButton.disabled = false;
-        verifyButton.textContent = 'Verify payment';
+        verifyButton.textContent = 'Confirm bank payment';
       }
     });
     payment.append(verifyButton, verifyStatus);
@@ -600,18 +601,23 @@ function setAdminView(view) {
 }
 
 async function refreshWorkspace() {
-  const [orderResult, userResult, riderResult, notificationResult, registrationResult] = await Promise.all([
+  const [orderResult, userResult, riderResult, notificationResult, registrationResult, paymentSettingsResult] = await Promise.all([
     api.request('/api/admin/orders'),
     api.request('/api/admin/users'),
     api.request('/api/admin/riders'),
     api.request('/api/admin/notifications'),
     api.request('/api/admin/registrations'),
+    api.request('/api/admin/payment-settings'),
   ]);
   orders = orderResult.orders;
   users = userResult.users;
   riders = riderResult.riders;
   notifications = notificationResult.notifications;
   registrations = registrationResult.registrations;
+  const paymentSettingsForm = document.querySelector('#payment-settings-form');
+  paymentSettingsForm.elements.bankName.value = paymentSettingsResult.settings.bankName;
+  paymentSettingsForm.elements.accountName.value = paymentSettingsResult.settings.accountName;
+  paymentSettingsForm.elements.accountNumber.value = paymentSettingsResult.settings.accountNumber;
   renderMetrics();
   renderQueue();
   renderUsers();
@@ -672,6 +678,33 @@ document.querySelector('#notification-form').addEventListener('submit', async ev
       result.warning || `Email sent to ${recipientLabel} and added to their account notifications.`,
       result.warning ? 'error' : 'success',
     );
+  } catch (error) {
+    api.setStatus(statusMessage, error.message);
+  } finally {
+    submit.disabled = false;
+  }
+});
+
+document.querySelector('#payment-settings-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const values = new FormData(form);
+  const submit = form.querySelector('[type="submit"]');
+  const statusMessage = document.querySelector('#payment-settings-status');
+  submit.disabled = true;
+  try {
+    const result = await api.request('/api/admin/payment-settings', {
+      method: 'PUT',
+      body: JSON.stringify({
+        bankName: values.get('bankName'),
+        accountName: values.get('accountName'),
+        accountNumber: values.get('accountNumber'),
+      }),
+    });
+    form.elements.bankName.value = result.settings.bankName;
+    form.elements.accountName.value = result.settings.accountName;
+    form.elements.accountNumber.value = result.settings.accountNumber;
+    api.setStatus(statusMessage, 'Bank details saved. Customers will see this account for confirmed delivery payments.', 'success');
   } catch (error) {
     api.setStatus(statusMessage, error.message);
   } finally {

@@ -439,6 +439,31 @@ test('customer and rider workflows share orders, assignment, and notifications',
   });
   assert.equal(adminLogin.response.status, 200);
   const adminCookie = adminLogin.cookie;
+  assert.equal((await request('/api/admin/payment-settings', { cookie: adminCookie })).response.status, 200);
+  const savedBankDetails = await request('/api/admin/payment-settings', {
+    method: 'PUT',
+    cookie: adminCookie,
+    body: {
+      bankName: 'A&M Admin Bank',
+      accountName: 'A&M Logistics',
+      accountNumber: '0123456789',
+    },
+  });
+  assert.equal(savedBankDetails.response.status, 200);
+  assert.equal(savedBankDetails.result.settings.bankName, 'A&M Admin Bank');
+  await seedAdmin(database);
+  const bankDetailsAfterAdminSeed = await request('/api/admin/payment-settings', { cookie: adminCookie });
+  assert.equal(bankDetailsAfterAdminSeed.result.settings.accountNumber, '0123456789');
+  const invalidBankDetails = await request('/api/admin/payment-settings', {
+    method: 'PUT',
+    cookie: adminCookie,
+    body: {
+      bankName: 'A&M Admin Bank',
+      accountName: 'A&M Logistics',
+      accountNumber: '123',
+    },
+  });
+  assert.equal(invalidBankDetails.response.status, 400);
   const adminOnCustomerPage = await request('/api/auth/me', { cookie: adminCookie });
   assert.equal(adminOnCustomerPage.response.status, 200);
   assert.equal(adminOnCustomerPage.result.user, null);
@@ -489,6 +514,16 @@ test('customer and rider workflows share orders, assignment, and notifications',
   assert.equal(returningCustomer.response.status, 200);
   assert.match(returningCustomer.cookie, /^ao_customer_session=/);
   customer.cookie = returningCustomer.cookie;
+  const customerCannotChangeBankDetails = await request('/api/admin/payment-settings', {
+    method: 'PUT',
+    cookie: customer.cookie,
+    body: {
+      bankName: 'Wrong Bank',
+      accountName: 'Wrong Account',
+      accountNumber: '0123456789',
+    },
+  });
+  assert.equal(customerCannotChangeBankDetails.response.status, 403);
   const customerProfile = await request('/api/auth/me', { cookie: customer.cookie });
   assert.equal(customerProfile.response.status, 200);
   assert.equal(customerProfile.result.user.email, 'customer@example.com');
@@ -627,7 +662,9 @@ test('customer and rider workflows share orders, assignment, and notifications',
   assert.equal(paymentInstructions.response.status, 200);
   assert.equal(paymentInstructions.result.amountNgn, 5500);
   assert.equal(paymentInstructions.result.paymentReference, order.result.order.reference);
-  assert.equal(paymentInstructions.result.bank.bankName, 'A&M Test Bank');
+  assert.equal(paymentInstructions.result.bank.bankName, 'A&M Admin Bank');
+  assert.equal(paymentInstructions.result.bank.accountName, 'A&M Logistics');
+  assert.equal(paymentInstructions.result.bank.accountNumber, '0123456789');
   const paymentCannotBeVerifiedBeforeReference = await request(`/api/admin/orders/${order.result.order.id}/payment`, {
     method: 'PATCH',
     cookie: adminCookie,
@@ -652,8 +689,18 @@ test('customer and rider workflows share orders, assignment, and notifications',
       body: { transferReference: 'BANK-TXN-2026-0042' },
     },
   );
-  assert.equal(submittedPaymentReference.response.status, 200);
-  assert.equal(submittedPaymentReference.result.order.paymentStatus, 'proof_submitted');
+  assert.equal(submittedPaymentReference.response.status, 400);
+  assert.match(submittedPaymentReference.result.error, /confirm that you have completed/i);
+  const confirmedPaymentSubmission = await request(
+    `/api/customer/orders/${order.result.order.id}/payment-reference`,
+    {
+      method: 'POST',
+      cookie: customer.cookie,
+      body: { transferReference: 'BANK-TXN-2026-0042', paidConfirmation: true },
+    },
+  );
+  assert.equal(confirmedPaymentSubmission.response.status, 200);
+  assert.equal(confirmedPaymentSubmission.result.order.paymentStatus, 'proof_submitted');
   assert.ok(emails.some(email => email.to === 'admin@example.com' && /payment reference submitted/i.test(email.subject)));
   const adminOrdersWithPaymentReference = await request('/api/admin/orders', { cookie: adminCookie });
   assert.equal(
@@ -667,6 +714,10 @@ test('customer and rider workflows share orders, assignment, and notifications',
   assert.equal(paymentVerified.response.status, 200);
   assert.equal(paymentVerified.result.order.paymentStatus, 'paid');
   assert.ok(emails.some(email => email.to === 'customer@example.com' && /payment confirmed/i.test(email.subject)));
+  const riderOrdersAfterPayment = await request('/api/rider/deliveries', { cookie: riderLogin.cookie });
+  const riderPaidOrder = riderOrdersAfterPayment.result.orders.find(candidate => candidate.id === order.result.order.id);
+  assert.equal(riderPaidOrder.paymentStatus, 'paid');
+  assert.equal(riderPaidOrder.deliveryPriceNgn, 5500);
   const riderPhoto = await fetch(`${baseUrl}/api/orders/${order.result.order.id}/photo`, {
     headers: { Cookie: riderLogin.cookie },
   });

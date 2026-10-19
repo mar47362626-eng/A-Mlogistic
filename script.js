@@ -205,23 +205,35 @@ async function renderOrders() {
             input.placeholder = 'Enter the reference shown by your bank';
             input.value = instructions.transferReference || '';
             label.append(input);
+            const paidLabel = document.createElement('label');
+            paidLabel.className = 'payment-paid-confirmation';
+            const paidCheckbox = document.createElement('input');
+            paidCheckbox.name = 'paidConfirmation';
+            paidCheckbox.type = 'checkbox';
+            paidCheckbox.required = true;
+            const paidText = document.createElement('span');
+            paidText.textContent = 'I have completed the bank transfer to the account above.';
+            paidLabel.append(paidCheckbox, paidText);
             const submit = document.createElement('button');
             submit.type = 'submit';
             submit.className = 'payment-details-button';
             submit.textContent = order.paymentStatus === 'proof_submitted'
-              ? 'Update transaction reference'
-              : 'Submit transaction reference';
+              ? 'I have paid — update my reference'
+              : 'I have paid — notify A&M';
             const message = document.createElement('p');
             message.className = 'payment-status';
             message.setAttribute('role', 'status');
-            form.append(label, submit, message);
+            form.append(label, paidLabel, submit, message);
             form.addEventListener('submit', async event => {
               event.preventDefault();
               submit.disabled = true;
               try {
                 const submitted = await api.request(`/api/customer/orders/${encodeURIComponent(order.id)}/payment-reference`, {
                   method: 'POST',
-                  body: JSON.stringify({ transferReference: input.value }),
+                  body: JSON.stringify({
+                    transferReference: input.value,
+                    paidConfirmation: paidCheckbox.checked,
+                  }),
                 });
                 order.paymentStatus = submitted.order.paymentStatus;
                 order.transferReference = submitted.order.transferReference;
@@ -229,7 +241,7 @@ async function renderOrders() {
                 message.textContent = submitted.warning || 'Reference submitted. A&M will verify the transfer before pickup.';
                 if (submitted.warning) message.dataset.state = 'error';
                 else delete message.dataset.state;
-                submit.textContent = 'Update transaction reference';
+                submit.textContent = 'I have paid — update my reference';
               } catch (error) {
                 message.textContent = error.message;
                 message.dataset.state = 'error';

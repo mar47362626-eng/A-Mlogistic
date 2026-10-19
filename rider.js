@@ -122,6 +122,21 @@ function renderDeliveries(orders, warning = '') {
       ? 'Earnings: recorded after delivery is completed'
       : `Earnings: ${new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(order.riderEarningsNgn)}`;
     item.append(earnings);
+    if (order.deliveryPriceNgn != null) {
+      const paymentStatus = document.createElement('p');
+      const amount = new Intl.NumberFormat('en-NG', {
+        style: 'currency',
+        currency: 'NGN',
+        maximumFractionDigits: 0,
+      }).format(order.deliveryPriceNgn);
+      const paymentState = order.paymentStatus === 'paid'
+        ? 'verified by A&M'
+        : order.paymentStatus === 'proof_submitted'
+          ? 'reference submitted · awaiting A&M verification'
+          : 'awaiting customer payment';
+      paymentStatus.textContent = `Customer payment: ${amount} · ${paymentState}`;
+      item.append(paymentStatus);
+    }
     if (order.status === 'Confirmed' && !order.pickupVerified) {
       if (order.deliveryPriceNgn !== null && order.deliveryPriceNgn !== undefined && order.paymentStatus !== 'paid') {
         const payment = document.createElement('p');

@@ -67,6 +67,12 @@ h1, h2, h3, p { margin-top: 0; }
 .refresh-button:hover { border-color: #93a46b; }
 .storage-notice { display: flex; align-items: center; gap: 13px; padding: 12px 15px; border-left: 3px solid var(--clay); background: #f0e8e2; color: #625549; font-size: 10px; line-height: 1.5; }
 .storage-notice strong { color: #814b35; white-space: nowrap; }
+.payment-settings-panel { margin: 16px 0; border: 1px solid var(--line); background: var(--surface); }
+.payment-settings-form { padding: 16px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: end; gap: 12px; }
+.payment-settings-form label { display: grid; gap: 6px; color: var(--muted); font-size: 10px; font-weight: 600; }
+.payment-settings-form input { min-width: 0; min-height: 38px; padding: 0 10px; border: 1px solid var(--line); background: white; color: var(--ink); font: 500 12px var(--body); }
+.payment-settings-form .button { min-height: 38px; }
+.payment-settings-status { grid-column: 1 / -1; }
 .metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 20px 0; }
 .metric { min-height: 106px; padding: 15px 17px; display: grid; align-content: start; justify-items: start; gap: 4px; border: 1px solid var(--line); background: var(--surface); }
 .metric-label { color: #656d64; font-size: 10px; font-weight: 600; }
@@ -186,6 +192,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .admin-header .header-tools { grid-column: 1 / -1; grid-row: 2; width: 100%; justify-content: space-between; padding-top: 0; margin-left: 0; }
   .admin-header h1 { font-size: 26px; }
   .storage-notice { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .payment-settings-form { grid-template-columns: 1fr; }
+  .payment-settings-status { grid-column: auto; }
   .metric-grid { grid-template-columns: 1fr 1fr; gap: 8px; margin: 13px 0; }
   .metric { min-height: 92px; padding: 12px; }
   .metric strong { font-size: 23px; }
