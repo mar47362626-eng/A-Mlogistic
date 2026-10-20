@@ -2,6 +2,8 @@ let currentUser = null;
 let calculatedRoute = null;
 let bankAvailable = false;
 let photoUrl = '';
+let photoDataUrl = '';
+let photoReadPromise = Promise.resolve();
 const supportedPhotoTypes = new Set([
   'image/jpeg',
   'image/png',
@@ -249,6 +251,8 @@ function fileAsDataUrl(file) {
 function clearPhotoPreview() {
   if (photoUrl) URL.revokeObjectURL(photoUrl);
   photoUrl = '';
+  photoDataUrl = '';
+  photoReadPromise = Promise.resolve();
   photoInput.value = '';
   document.querySelector('#app-photo-preview').hidden = true;
 }
@@ -355,6 +359,8 @@ document.querySelector('#app-order-photo').addEventListener('change', () => {
   const file = photoInput.files[0];
   if (photoUrl) URL.revokeObjectURL(photoUrl);
   photoUrl = '';
+  photoDataUrl = '';
+  photoReadPromise = Promise.resolve();
   if (!file) {
     document.querySelector('#app-photo-preview').hidden = true;
     return;
@@ -369,6 +375,18 @@ document.querySelector('#app-order-photo').addEventListener('change', () => {
   document.querySelector('#app-photo-preview-image').src = photoUrl;
   document.querySelector('#app-photo-file-name').textContent = file.name;
   document.querySelector('#app-photo-preview').hidden = false;
+  setStatus('#order-status', 'Preparing your photo...');
+  photoReadPromise = fileAsDataUrl(file).then(dataUrl => {
+    if (photoInput.files[0] === file) {
+      photoDataUrl = dataUrl;
+      setStatus('#order-status', '');
+    }
+  }).catch(() => {
+    if (photoInput.files[0] === file) {
+      clearPhotoPreview();
+      setStatus('#order-status', 'Your phone could not read that photo. Please select a photo saved on your device and try again.');
+    }
+  });
 });
 
 document.querySelector('#app-remove-photo').addEventListener('click', clearPhotoPreview);
@@ -400,6 +418,10 @@ orderForm.addEventListener('submit', async event => {
   submit.disabled = true;
   setStatus('#order-status', '');
   try {
+    await photoReadPromise;
+    if (photoInput.files[0] !== photo || !photoDataUrl) {
+      throw new Error('Your phone could not read the selected photo. Please select it again from a folder saved on your device.');
+    }
     const result = await api.request('/api/customer/orders', {
       method: 'POST',
       body: JSON.stringify({
@@ -415,7 +437,7 @@ orderForm.addEventListener('submit', async event => {
         notes: values.get('notes'),
         transferReference: values.get('transferReference'),
         paidConfirmation: values.get('paidConfirmation') === 'on',
-        photo: await fileAsDataUrl(photo),
+        photo: photoDataUrl,
       }),
     });
     form.reset();

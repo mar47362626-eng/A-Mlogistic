@@ -4,6 +4,8 @@ const authView = document.querySelector('#auth-view');
 const dashboard = document.querySelector('#customer-dashboard');
 let currentUser = null;
 let selectedPhotoUrl = '';
+let selectedPhotoDataUrl = '';
+let photoReadPromise = Promise.resolve();
 let calculatedRoute = null;
 let orderBankAvailable = false;
 const supportedPhotoTypes = new Set([
@@ -483,6 +485,8 @@ photoInput.addEventListener('change', () => {
   const file = photoInput.files[0];
   if (selectedPhotoUrl) URL.revokeObjectURL(selectedPhotoUrl);
   selectedPhotoUrl = '';
+  selectedPhotoDataUrl = '';
+  photoReadPromise = Promise.resolve();
   if (!file) {
     document.querySelector('#photo-preview').hidden = true;
     return;
@@ -498,11 +502,29 @@ photoInput.addEventListener('change', () => {
   document.querySelector('#photo-preview-image').src = selectedPhotoUrl;
   document.querySelector('#photo-file-name').textContent = file.name;
   document.querySelector('#photo-preview').hidden = false;
+  showMessage('#order-status', 'Preparing your photo...');
+  photoReadPromise = fileAsDataUrl(file).then(dataUrl => {
+    if (photoInput.files[0] === file) {
+      selectedPhotoDataUrl = dataUrl;
+      showMessage('#order-status', '');
+    }
+  }).catch(() => {
+    if (photoInput.files[0] === file) {
+      if (selectedPhotoUrl) URL.revokeObjectURL(selectedPhotoUrl);
+      selectedPhotoUrl = '';
+      selectedPhotoDataUrl = '';
+      photoInput.value = '';
+      document.querySelector('#photo-preview').hidden = true;
+      showMessage('#order-status', 'Your phone could not read that photo. Please select a photo saved on your device and try again.');
+    }
+  });
 });
 
 document.querySelector('#remove-photo').addEventListener('click', () => {
   if (selectedPhotoUrl) URL.revokeObjectURL(selectedPhotoUrl);
   selectedPhotoUrl = '';
+  selectedPhotoDataUrl = '';
+  photoReadPromise = Promise.resolve();
   photoInput.value = '';
   document.querySelector('#photo-preview').hidden = true;
 });
@@ -540,6 +562,10 @@ document.querySelector('#order-form').addEventListener('submit', async event => 
   const submit = form.querySelector('[type="submit"]');
   submit.disabled = true;
   try {
+    await photoReadPromise;
+    if (photoInput.files[0] !== photo || !selectedPhotoDataUrl) {
+      throw new Error('Your phone could not read the selected photo. Please select it again from a folder saved on your device.');
+    }
     const result = await api.request('/api/customer/orders', {
       method: 'POST',
       body: JSON.stringify({
@@ -555,7 +581,7 @@ document.querySelector('#order-form').addEventListener('submit', async event => 
         notes: values.get('notes'),
         transferReference: values.get('transferReference'),
         paidConfirmation: values.get('paidConfirmation') === 'on',
-        photo: await fileAsDataUrl(photo),
+        photo: selectedPhotoDataUrl,
       }),
     });
     form.reset();
@@ -565,6 +591,8 @@ document.querySelector('#order-form').addEventListener('submit', async event => 
     document.querySelector('#photo-preview').hidden = true;
     if (selectedPhotoUrl) URL.revokeObjectURL(selectedPhotoUrl);
     selectedPhotoUrl = '';
+    selectedPhotoDataUrl = '';
+    photoReadPromise = Promise.resolve();
     form.elements.phone.value = currentUser.phone;
     form.elements.pickupEmail.value = currentUser.email;
     showMessage('#order-status', '');
