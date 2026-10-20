@@ -42,6 +42,7 @@ After creating the Render service, set its build command to `npm ci`, start comm
 ## Main workflows
 
 - Customers register and receive a welcome email, then sign in and create delivery requests with pickup and delivery contact email addresses. The customer and configured admin accounts receive an email when a request is placed.
+- Delivery requests accept common photo formats (JPEG, PNG, WebP, GIF, BMP, AVIF, HEIC/HEIF, and TIFF) up to 5 MB.
 - Riders apply with an account password and receive an application email. When an administrator confirms an order with an approved rider assigned, the rider receives the assignment by email.
 - Administrators receive email alerts for new delivery requests, rider applications, completed deliveries, and rider payout requests. Riders receive a completion email with their calculated earnings; admins can review the delivered item, rider, earnings, and payout request in the Delivered workspace.
 - Order emails to customers, configured admins, the assigned rider, and pickup/delivery contacts embed the uploaded package photo directly in the message body as a CID inline image. This includes new-request, rider-assignment, handoff-code, and status-update emails.

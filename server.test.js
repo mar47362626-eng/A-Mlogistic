@@ -1056,4 +1056,54 @@ test('customer and rider workflows share orders, assignment, and notifications',
   });
   assert.equal(photo.status, 200);
   assert.equal(photo.headers.get('content-type'), 'image/png');
+
+  const heicPhoto = Buffer.from('000000186674797068656963000000006865696300000000', 'hex');
+  const additionalPhotoOrder = await request('/api/customer/orders', {
+    method: 'POST',
+    cookie: customer.cookie,
+    body: {
+      item: 'Photo format test',
+      quantity: 1,
+      description: 'HEIC photo upload',
+      pickup: 'Five Street',
+      delivery: 'Six Street',
+      pickupEmail: 'pickup@example.com',
+      deliveryEmail: 'delivery@example.com',
+      date: '2026-10-20',
+      phone: '555-0110',
+      notes: '',
+      transferReference: 'HEIC-TXN-2026',
+      paidConfirmation: true,
+      photo: `data:image/heic;base64,${heicPhoto.toString('base64')}`,
+    },
+  });
+  assert.equal(additionalPhotoOrder.response.status, 201);
+  assert.equal(emails.at(-1).inlineImage.name, `package-${additionalPhotoOrder.result.order.reference}.heic`);
+  const heicPhotoResponse = await fetch(`${baseUrl}/api/orders/${additionalPhotoOrder.result.order.id}/photo`, {
+    headers: { Cookie: customer.cookie },
+  });
+  assert.equal(heicPhotoResponse.status, 200);
+  assert.equal(heicPhotoResponse.headers.get('content-type'), 'image/heic');
+  assert.deepEqual(Buffer.from(await heicPhotoResponse.arrayBuffer()), heicPhoto);
+
+  const unsupportedPhotoOrder = await request('/api/customer/orders', {
+    method: 'POST',
+    cookie: customer.cookie,
+    body: {
+      item: 'Unsupported photo format test',
+      quantity: 1,
+      description: 'SVG must not be accepted as a package photo',
+      pickup: 'Five Street',
+      delivery: 'Six Street',
+      pickupEmail: 'pickup@example.com',
+      deliveryEmail: 'delivery@example.com',
+      date: '2026-10-20',
+      phone: '555-0110',
+      notes: '',
+      transferReference: 'SVG-TXN-2026',
+      paidConfirmation: true,
+      photo: 'data:image/svg+xml;base64,PHN2Zy8+',
+    },
+  });
+  assert.equal(unsupportedPhotoOrder.response.status, 400);
 });

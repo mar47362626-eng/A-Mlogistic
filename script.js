@@ -6,6 +6,17 @@ let currentUser = null;
 let selectedPhotoUrl = '';
 let calculatedRoute = null;
 let orderBankAvailable = false;
+const supportedPhotoTypes = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/bmp',
+  'image/avif',
+  'image/heic',
+  'image/heif',
+  'image/tiff',
+]);
 const pickupAddressInput = document.querySelector('#order-form [name="pickup"]');
 const deliveryAddressInput = document.querySelector('#order-form [name="delivery"]');
 const deliveryPricePreview = document.querySelector('#delivery-price-preview');
@@ -476,10 +487,10 @@ photoInput.addEventListener('change', () => {
     document.querySelector('#photo-preview').hidden = true;
     return;
   }
-  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+  if (!supportedPhotoTypes.has(file.type.toLowerCase()) || file.size > 5 * 1024 * 1024) {
     photoInput.value = '';
     document.querySelector('#photo-preview').hidden = true;
-    showMessage('#order-status', 'Choose a JPG, PNG, or WebP image smaller than 5 MB.');
+    showMessage('#order-status', 'Choose a JPG, PNG, WebP, GIF, BMP, AVIF, HEIC/HEIF, or TIFF image under 5 MB.');
     return;
   }
   showMessage('#order-status', '');
@@ -510,8 +521,8 @@ document.querySelector('#order-form').addEventListener('submit', async event => 
   const form = event.currentTarget;
   const values = new FormData(form);
   const photo = photoInput.files[0];
-  if (!photo || !['image/jpeg', 'image/png', 'image/webp'].includes(photo.type) || photo.size > 5 * 1024 * 1024) {
-    showMessage('#order-status', 'Add a JPG, PNG, or WebP item photo under 5 MB before submitting your request.');
+  if (!photo || !supportedPhotoTypes.has(photo.type.toLowerCase()) || photo.size > 5 * 1024 * 1024) {
+    showMessage('#order-status', 'Add a JPG, PNG, WebP, GIF, BMP, AVIF, HEIC/HEIF, or TIFF item photo under 5 MB before submitting your request.');
     return;
   }
   if (!calculatedRoute

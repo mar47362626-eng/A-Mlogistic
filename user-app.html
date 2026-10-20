@@ -164,7 +164,7 @@
         <label>What are we collecting?<input name="item" required placeholder="Box, chair, equipment..."></label>
         <label>Number of items<input name="quantity" type="number" min="1" max="100" value="1" required></label>
         <label>Describe the item<textarea name="description" rows="2" required placeholder="Size, weight, or anything we should handle carefully"></textarea></label>
-        <label class="upload-label">Photo of the item <span>Required · JPG, PNG, or WebP, up to 5 MB</span><input id="app-order-photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp" required></label>
+        <label class="upload-label">Photo of the item <span>Required · JPG, PNG, WebP, GIF, BMP, AVIF, HEIC/HEIF, or TIFF, up to 5 MB</span><input id="app-order-photo" name="photo" type="file" accept="image/*" required></label>
         <div class="photo-preview" id="app-photo-preview" hidden><img id="app-photo-preview-image" alt="Preview of the selected item"><div><strong id="app-photo-file-name"></strong><span>Ready to attach to your request</span></div><button id="app-remove-photo" type="button" aria-label="Remove selected photo">×</button></div>
         <label>Pickup address<textarea name="pickup" rows="2" autocomplete="street-address" required placeholder="Street, city, state"></textarea></label>
         <label>Delivery address<textarea name="delivery" rows="2" required placeholder="Street, city, state"></textarea></label>

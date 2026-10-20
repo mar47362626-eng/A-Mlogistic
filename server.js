@@ -18,7 +18,17 @@ const legacySessionCookie = 'ao_session';
 const sessionDuration = 7 * 24 * 60 * 60 * 1000;
 const orderStatuses = ['Received', 'Confirmed', 'Collected', 'In transit', 'Delivered', 'Cancelled'];
 const riderStatuses = ['Approved', 'Declined'];
-const photoTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const photoTypes = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/bmp',
+  'image/avif',
+  'image/heic',
+  'image/heif',
+  'image/tiff',
+]);
 const staticDirectory = __dirname;
 const handoffCodeDuration = 10 * 60 * 1000;
 const handoffCodeAttemptLimit = 5;
@@ -192,6 +202,12 @@ function orderPhotoAttachment(order) {
       'image/jpeg': 'jpg',
       'image/png': 'png',
       'image/webp': 'webp',
+      'image/gif': 'gif',
+      'image/bmp': 'bmp',
+      'image/avif': 'avif',
+      'image/heic': 'heic',
+      'image/heif': 'heif',
+      'image/tiff': 'tiff',
     })[order.photo_type] || 'img'}`,
     content: order.photo.toString('base64'),
     contentType: order.photo_type,
@@ -772,18 +788,33 @@ async function sendNotifications(tasks, context) {
 }
 
 function parsePhoto(dataUrl) {
-  if (typeof dataUrl !== 'string') throw requestError('Add a JPG, PNG, or WebP photo under 5 MB.');
-  const match = dataUrl.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/]+={0,2})$/);
-  if (!match || !photoTypes.has(match[1])) throw requestError('Add a valid JPG, PNG, or WebP photo.');
+  if (typeof dataUrl !== 'string') throw requestError('Add a photo in a supported image format under 5 MB.');
+  const match = dataUrl.match(/^data:(image\/[a-z0-9.+-]+);base64,([A-Za-z0-9+/]+={0,2})$/i);
+  if (!match || !photoTypes.has(match[1].toLowerCase())) {
+    throw requestError('Add a valid photo in a supported image format.');
+  }
   const photo = Buffer.from(match[2], 'base64');
   if (!photo.length || photo.length > 5 * 1024 * 1024) throw requestError('The photo must be smaller than 5 MB.');
+  const type = match[1].toLowerCase();
+  const fileTypeBox = photo.length >= 12 && photo.toString('ascii', 4, 8) === 'ftyp';
+  const fileBrands = fileTypeBox ? photo.toString('ascii', 8, Math.min(photo.length, 64)) : '';
   const signatures = {
     'image/jpeg': photo.length >= 3 && photo[0] === 0xff && photo[1] === 0xd8 && photo[2] === 0xff,
     'image/png': photo.length >= 8 && photo.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
     'image/webp': photo.length >= 12 && photo.toString('ascii', 0, 4) === 'RIFF' && photo.toString('ascii', 8, 12) === 'WEBP',
+    'image/gif': photo.length >= 6 && ['GIF87a', 'GIF89a'].includes(photo.toString('ascii', 0, 6)),
+    'image/bmp': photo.length >= 2 && photo.toString('ascii', 0, 2) === 'BM',
+    'image/avif': fileTypeBox && ['avif', 'avis'].some(brand => fileBrands.includes(brand)),
+    'image/heic': fileTypeBox && ['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1'].some(brand => fileBrands.includes(brand)),
+    'image/heif': fileTypeBox && ['heic', 'heix', 'hevc', 'hevx', 'mif1', 'msf1'].some(brand => fileBrands.includes(brand)),
+    'image/tiff': photo.length >= 4
+      && (photo.subarray(0, 4).equals(Buffer.from([0x49, 0x49, 0x2a, 0x00]))
+        || photo.subarray(0, 4).equals(Buffer.from([0x4d, 0x4d, 0x00, 0x2a]))
+        || photo.subarray(0, 4).equals(Buffer.from([0x49, 0x49, 0x2b, 0x00]))
+        || photo.subarray(0, 4).equals(Buffer.from([0x4d, 0x4d, 0x00, 0x2b]))),
   };
-  if (!signatures[match[1]]) throw requestError('The uploaded photo does not match its image type.');
-  return { photo, type: match[1] };
+  if (!signatures[type]) throw requestError('The uploaded photo does not match its image type.');
+  return { photo, type };
 }
 
 function createApp(database, {
