@@ -827,7 +827,6 @@ function createApp(database, {
   const requireRider = authenticate(database, 'rider');
   const optionalRider = authenticate(database, 'rider', { allowAnonymous: true });
   const requireAdmin = authenticate(database, 'admin');
-  const optionalAdmin = authenticate(database, 'admin', { allowAnonymous: true });
   const requireAdminRole = authenticate(database, null);
   const routeEstimateRequests = new Map();
   const adminEmails = async () => {
@@ -951,12 +950,8 @@ function createApp(database, {
     }
   });
 
-  app.post('/api/auth/admin/register', optionalAdmin, async (request, response, next) => {
+  app.post('/api/auth/admin/register', requireAdmin, async (request, response, next) => {
     try {
-      const isAuthenticatedAdmin = request.auth?.role === 'admin';
-      if (await database.find('users', user => user.role === 'admin') && !isAuthenticatedAdmin) {
-        throw requestError('An existing admin must sign in before another admin account can be registered.', 403);
-      }
       const name = textField(request.body, 'name', { max: 120 });
       const phone = typeof request.body.phone === 'string' ? request.body.phone.trim() : '';
       if (phone.length > 40) throw requestError('Phone number must be 40 characters or fewer.');
@@ -970,9 +965,6 @@ function createApp(database, {
         throw requestError('An admin with this email already exists. Please log in instead.', 409);
       }
       const credentials = await passwordDigest(password);
-      if (!isAuthenticatedAdmin && await database.find('users', user => user.role === 'admin')) {
-        throw requestError('An admin account was registered while this request was in progress. Please sign in.', 403);
-      }
       const id = crypto.randomUUID();
       const registeredAt = Date.now();
       await database.insert('users', {
@@ -2015,7 +2007,13 @@ async function seedAdmin(database) {
   const email = normalizeEmail(process.env.ADMIN_EMAIL);
   const password = process.env.ADMIN_PASSWORD;
   const hasConfiguredAdmin = Boolean(email || password);
-  if (!hasConfiguredAdmin) return;
+  if (!hasConfiguredAdmin) {
+    if (process.env.NODE_ENV === 'production'
+      && !await database.find('users', user => user.role === 'admin')) {
+      throw new Error('Production requires a provisioned admin. Set ADMIN_EMAIL and ADMIN_PASSWORD before starting the server.');
+    }
+    return;
+  }
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     throw new Error('Set a valid ADMIN_EMAIL environment variable before starting the server.');
   }

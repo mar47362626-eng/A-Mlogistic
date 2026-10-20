@@ -178,10 +178,10 @@ function createSupabaseDatabase({
   try {
     parsedUrl = new URL(url);
   } catch {
-    throw new Error('SUPABASE_URL must be a valid HTTP(S) URL.');
+    throw new Error('SUPABASE_URL must be a valid HTTPS URL.');
   }
-  if (!['https:', 'http:'].includes(parsedUrl.protocol) || !fetchImpl) {
-    throw new Error('SUPABASE_URL must be a valid HTTP(S) URL and fetch must be available.');
+  if (parsedUrl.protocol !== 'https:' || !fetchImpl) {
+    throw new Error('SUPABASE_URL must use HTTPS and fetch must be available.');
   }
 
   const endpoint = new URL('/rest/v1/app_records', parsedUrl);

@@ -422,7 +422,7 @@ test('admin accounts can be created through the registration endpoint', async ()
     assert.equal(profile.response.status, 200);
     assert.equal(profile.result.user.email, 'email-outage-customer@example.com');
   });
-  assert.equal(unauthenticatedRegistration.response.status, 403);
+  assert.equal(unauthenticatedRegistration.response.status, 401);
 
   const existingAdminLogin = await request('/api/auth/admin/login', {
     method: 'POST',
@@ -451,7 +451,7 @@ test('admin accounts can be created through the registration endpoint', async ()
   assert.equal(login.result.user.email, 'admin2@example.com');
 });
 
-test('the first admin can register without an existing admin session', async () => {
+test('an unauthenticated caller cannot bootstrap the first admin', async () => {
   const bootstrapDatabase = createDatabase(':memory:');
   const bootstrapServer = createApp(bootstrapDatabase, { sendEmail: async () => {} }).listen(0, '127.0.0.1');
   await new Promise(resolve => bootstrapServer.once('listening', resolve));
@@ -467,11 +467,48 @@ test('the first admin can register without an existing admin session', async () 
         password: 'first-admin-password-123',
       }),
     });
-    assert.equal(response.status, 201);
-    assert.match(response.headers.get('set-cookie'), /^ao_admin_session=/);
+    assert.equal(response.status, 401);
+    assert.deepEqual(await bootstrapDatabase.list('users', user => user.role === 'admin'), []);
   } finally {
     await new Promise((resolve, reject) => bootstrapServer.close(error => error ? reject(error) : resolve()));
     bootstrapDatabase.close();
+  }
+});
+
+test('production requires a provisioned admin before the server can start', async () => {
+  const originalEnvironment = {
+    nodeEnv: process.env.NODE_ENV,
+    adminEmail: process.env.ADMIN_EMAIL,
+    adminPassword: process.env.ADMIN_PASSWORD,
+  };
+  const emptyDatabase = createDatabase(':memory:');
+  process.env.NODE_ENV = 'production';
+  delete process.env.ADMIN_EMAIL;
+  delete process.env.ADMIN_PASSWORD;
+
+  try {
+    await assert.rejects(seedAdmin(emptyDatabase), /Production requires a provisioned admin/);
+    assert.deepEqual(await emptyDatabase.list('users', user => user.role === 'admin'), []);
+    await emptyDatabase.insert('users', {
+      id: 'existing-admin',
+      email: 'existing-admin@example.com',
+      name: 'Existing Admin',
+      phone: '',
+      password_salt: 'salt',
+      password_hash: 'hash',
+      role: 'admin',
+      registered_at: Date.now(),
+    });
+    await seedAdmin(emptyDatabase);
+    assert.equal((await emptyDatabase.find('users', user => user.role === 'admin')).email, 'existing-admin@example.com');
+  } finally {
+    if (originalEnvironment.nodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = originalEnvironment.nodeEnv;
+    if (originalEnvironment.adminEmail === undefined) delete process.env.ADMIN_EMAIL;
+    else process.env.ADMIN_EMAIL = originalEnvironment.adminEmail;
+    if (originalEnvironment.adminPassword === undefined) delete process.env.ADMIN_PASSWORD;
+    else process.env.ADMIN_PASSWORD = originalEnvironment.adminPassword;
+    emptyDatabase.close();
   }
 });
 

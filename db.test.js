@@ -101,6 +101,13 @@ test('JSON collections persist across restarts and retain order photos', () => {
       assert.throws(() => createSupabaseDatabase({ url: '', serviceRoleKey: '' }), /SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY/);
     });
 
+    test('Supabase adapter rejects insecure HTTP URLs before sending credentials', () => {
+      assert.throws(() => createSupabaseDatabase({
+        url: 'http://example.supabase.co',
+        serviceRoleKey: 'test-service-role-key',
+      }), /SUPABASE_URL must use HTTPS/);
+    });
+
     test('Supabase adapter accepts a project reference entered without its full URL', async () => {
       let requestedUrl;
       const database = createSupabaseDatabase({
