@@ -125,8 +125,6 @@ h2 { font: 600 43px/1.15 var(--display); letter-spacing: -1.1px; }
 .footer-brand .brand-name { font-size: 8px; }
 .site-footer > p { margin: 0; color: var(--muted); font-size: 11px; }
 .footer-legal, .back-top { color: var(--muted); font-size: 9px; letter-spacing: .5px; }
-.admin-link { color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .5px; }
-.admin-link:hover { color: var(--ink); }
 .back-top { color: var(--ink); font-weight: 700; }
 #customer-portal, #services, #about, #how-it-works { scroll-margin-top: 98px; }
 .portal-section { display: none; background: #e8e9df; padding: 92px 10%; }

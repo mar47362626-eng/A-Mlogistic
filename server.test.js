@@ -90,11 +90,19 @@ after(async () => {
 });
 
 test('separate site pages are served and protected APIs enforce roles', async () => {
-  const [home, riderPage, cleanAdminPage, cleanRiderPage, adminData, databaseFile, jsonDatabaseFile, pricing] = await Promise.all([
+  const [home, riderPage, riderAppPage, userAppPage, cleanAdminPage, cleanRiderPage, cleanUserAppPage, cleanRiderAppPage, userAppCss, userAppJs, riderAppCss, riderAppJs, adminData, databaseFile, jsonDatabaseFile, pricing] = await Promise.all([
     fetch(`${baseUrl}/index.html`),
     fetch(`${baseUrl}/rider.html`),
+    fetch(`${baseUrl}/rider-app.html`),
+    fetch(`${baseUrl}/user-app.html`),
     fetch(`${baseUrl}/admin`),
     fetch(`${baseUrl}/rider`),
+    fetch(`${baseUrl}/user-app`),
+    fetch(`${baseUrl}/rider-app`),
+    fetch(`${baseUrl}/user-app.css`),
+    fetch(`${baseUrl}/user-app.js`),
+    fetch(`${baseUrl}/rider-app.css`),
+    fetch(`${baseUrl}/rider-app.js`),
     request('/api/admin/orders'),
     fetch(`${baseUrl}/data/ao-logistics.sqlite`),
     fetch(`${baseUrl}/data/users.json`),
@@ -102,10 +110,22 @@ test('separate site pages are served and protected APIs enforce roles', async ()
   ]);
   assert.equal(home.status, 200);
   assert.equal(riderPage.status, 200);
+  assert.equal(riderAppPage.status, 200);
+  assert.equal(userAppPage.status, 200);
   assert.equal(cleanAdminPage.status, 200);
   assert.equal(cleanRiderPage.status, 200);
-  assert.match(await home.text(), /We move/);
+  assert.equal(cleanUserAppPage.status, 200);
+  assert.equal(cleanRiderAppPage.status, 200);
+  assert.equal(userAppCss.status, 200);
+  assert.equal(userAppJs.status, 200);
+  assert.equal(riderAppCss.status, 200);
+  assert.equal(riderAppJs.status, 200);
+  assert.match(await home.text(), /We deliver/);
   assert.match(await riderPage.text(), /RIDER APPLICATION/);
+  assert.match(await riderAppPage.text(), /A&amp;M RIDER APP/);
+  assert.match(await userAppPage.text(), /Your delivery hub/);
+  assert.match(await cleanUserAppPage.text(), /data-view="home"/);
+  assert.match(await cleanRiderAppPage.text(), /A&amp;M RIDER APP/);
   assert.match(await cleanAdminPage.text(), /A&M Logistics/);
   assert.match(await cleanRiderPage.text(), /RIDER APPLICATION/);
   assert.equal(adminData.response.status, 401);
@@ -209,21 +229,33 @@ test('favicon requests redirect to the branded SVG icon', async () => {
   assert.match(await icon.text(), /<svg/);
 });
 
-test('clean admin and rider URLs normalize trailing slashes and old file URLs redirect', async () => {
-  const [admin, rider, oldAdmin, oldRider] = await Promise.all([
+test('clean app URLs normalize trailing slashes and old file URLs redirect', async () => {
+  const [admin, rider, userApp, riderApp, oldAdmin, oldRider, oldUserApp, oldRiderApp] = await Promise.all([
     fetch(`${baseUrl}/admin/`, { redirect: 'manual' }),
     fetch(`${baseUrl}/rider/`, { redirect: 'manual' }),
+    fetch(`${baseUrl}/user-app/`, { redirect: 'manual' }),
+    fetch(`${baseUrl}/rider-app/`, { redirect: 'manual' }),
     fetch(`${baseUrl}/admin.html`, { redirect: 'manual' }),
     fetch(`${baseUrl}/rider.html`, { redirect: 'manual' }),
+    fetch(`${baseUrl}/user-app.html`, { redirect: 'manual' }),
+    fetch(`${baseUrl}/rider-app.html`, { redirect: 'manual' }),
   ]);
   assert.equal(admin.status, 301);
   assert.equal(admin.headers.get('location'), '/admin');
   assert.equal(rider.status, 301);
   assert.equal(rider.headers.get('location'), '/rider');
+  assert.equal(userApp.status, 301);
+  assert.equal(userApp.headers.get('location'), '/user-app');
+  assert.equal(riderApp.status, 301);
+  assert.equal(riderApp.headers.get('location'), '/rider-app');
   assert.equal(oldAdmin.status, 301);
   assert.equal(oldAdmin.headers.get('location'), '/admin');
   assert.equal(oldRider.status, 301);
   assert.equal(oldRider.headers.get('location'), '/rider');
+  assert.equal(oldUserApp.status, 301);
+  assert.equal(oldUserApp.headers.get('location'), '/user-app');
+  assert.equal(oldRiderApp.status, 301);
+  assert.equal(oldRiderApp.headers.get('location'), '/rider-app');
 });
 
 test('deployed frontend origins are allowed for credentialed API calls and untrusted origins are rejected', async () => {

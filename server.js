@@ -854,14 +854,26 @@ function createApp(database, {
 
   app.get('/favicon.ico', (request, response) => response.redirect(302, '/favicon.svg'));
 
-  app.get(['/admin', '/admin/', '/rider', '/rider/'], (request, response) => {
+  app.get(['/admin', '/admin/', '/rider', '/rider/', '/user-app', '/user-app/', '/rider-app', '/rider-app/'], (request, response) => {
     if (request.path.endsWith('/')) {
       return response.redirect(301, request.path.slice(0, -1));
     }
-    return response.sendFile(request.path === '/admin' ? 'admin.html' : 'rider.html', { root: staticDirectory });
+    const pages = {
+      '/admin': 'admin.html',
+      '/rider': 'rider.html',
+      '/user-app': 'user-app.html',
+      '/rider-app': 'rider-app.html',
+    };
+    return response.sendFile(pages[request.path], { root: staticDirectory });
   });
-  app.get(['/admin.html', '/rider.html'], (request, response) => {
-    response.redirect(301, request.path === '/admin.html' ? '/admin' : '/rider');
+  app.get(['/admin.html', '/rider.html', '/user-app.html', '/rider-app.html'], (request, response) => {
+    const pages = {
+      '/admin.html': '/admin',
+      '/rider.html': '/rider',
+      '/user-app.html': '/user-app',
+      '/rider-app.html': '/rider-app',
+    };
+    response.redirect(301, pages[request.path]);
   });
 
   app.post('/api/auth/register', async (request, response, next) => {

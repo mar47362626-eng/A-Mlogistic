@@ -137,7 +137,7 @@ async function loadOrderBankDetails() {
 function invalidateCalculatedRoute() {
   calculatedRoute = null;
   deliveryPricePreview.textContent = 'Addresses changed. Calculate the route again to see the estimate.';
-  routeDistance.textContent = 'The website calculates driving distance from your addresses. Address lookup is sent to OpenStreetMap; driving routes use OSRM.';
+  routeDistance.textContent = 'Enter both addresses to see the driving distance and estimated fee.';
 }
 
 async function renderOrders() {

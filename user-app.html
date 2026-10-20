@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f5f4ef">
+  <meta name="description" content="Your A&M Logistics customer hub. Arrange a delivery and manage your requests from your phone or tablet.">
+  <title>Your delivery hub | A&amp;M Logistics</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="user-app.css">
+  <script src="api-client.js" defer></script>
+  <script src="user-app.js" defer></script>
+</head>
+<body>
+  <header class="app-header">
+    <a class="brand" href="#home" data-app-view="home" aria-label="A and M Logistics app home">
+      <span class="brand-mark">A<span>&amp;</span>M</span>
+      <span class="brand-name">LOGISTICS</span>
+    </a>
+    <nav class="desktop-nav" aria-label="App navigation">
+      <button class="active" type="button" data-app-view="home">Home</button>
+      <button type="button" data-app-view="deliveries">My deliveries</button>
+      <button type="button" data-app-view="account">Account</button>
+    </nav>
+    <button class="header-account" type="button" data-app-view="account">Sign in <span aria-hidden="true">↗</span></button>
+  </header>
+
+  <main class="app-shell" id="home">
+    <section class="app-view" id="home-view" data-view="home">
+      <div class="welcome">
+        <div class="welcome-copy">
+          <p class="eyebrow"><span class="status-dot"></span> YOUR A&amp;M DELIVERY HUB</p>
+          <h1>Good things<br>get <span>there.</span></h1>
+          <p>Arrange a delivery, keep your requests together, and get help when you need it — all in one place.</p>
+          <button class="button button-dark" type="button" data-app-view="order">Arrange a delivery <span aria-hidden="true">↗</span></button>
+        </div>
+        <div class="welcome-art" aria-hidden="true">
+          <div class="route route-one"></div>
+          <div class="route route-two"></div>
+          <div class="route-pin pin-start"><span></span></div>
+          <div class="route-pin pin-end"><span></span></div>
+          <div class="delivery-card"><span class="delivery-icon">↗</span><span><strong>Moving with care</strong><small>From pickup to arrival</small></span><span class="delivery-check">✓</span></div>
+        </div>
+      </div>
+
+      <section class="quick-actions" aria-label="Quick actions">
+        <button class="action-card primary-action" type="button" data-app-view="order">
+          <span class="action-icon" aria-hidden="true">＋</span>
+          <span><strong>Book a delivery</strong><small>Tell us what needs moving</small></span>
+          <span class="action-arrow" aria-hidden="true">↗</span>
+        </button>
+        <button class="action-card" type="button" data-app-view="deliveries">
+          <span class="action-icon" aria-hidden="true">≡</span>
+          <span><strong>My requests</strong><small>See your saved deliveries</small></span>
+          <span class="action-arrow" aria-hidden="true">→</span>
+        </button>
+        <button class="action-card" type="button" data-app-view="account">
+          <span class="action-icon" aria-hidden="true">○</span>
+          <span><strong>Your account</strong><small>Sign in or create an account</small></span>
+          <span class="action-arrow" aria-hidden="true">→</span>
+        </button>
+      </section>
+
+      <section class="content-grid">
+        <div class="requests-panel">
+          <div class="section-heading">
+            <div><p class="eyebrow">KEEP THINGS MOVING</p><h2>Your deliveries</h2></div>
+            <button class="subtle-link" type="button" data-app-view="deliveries">View all <span aria-hidden="true">↗</span></button>
+          </div>
+          <div class="empty-state">
+            <div class="empty-icon" aria-hidden="true"><span>↗</span></div>
+            <h3>Your next delivery starts here</h3>
+            <p>Sign in to see saved requests or arrange a delivery from this app.</p>
+            <button class="button button-outline" type="button" data-app-view="account">Open your account <span aria-hidden="true">→</span></button>
+          </div>
+        </div>
+        <aside class="help-panel">
+          <span class="help-mark" aria-hidden="true">A&amp;M</span>
+          <p class="eyebrow">HERE WHEN YOU NEED US</p>
+          <h2>Need a hand with a delivery?</h2>
+          <p>Use your A&amp;M account to share delivery details and send your request to our team.</p>
+          <button class="help-link" type="button" data-app-view="order">Get started <span aria-hidden="true">↗</span></button>
+        </aside>
+      </section>
+
+      <section class="how-it-works">
+        <div class="section-heading">
+          <div><p class="eyebrow">A SIMPLE START</p><h2>Three steps to get going</h2></div>
+        </div>
+        <div class="steps">
+          <article class="step-card"><span class="step-number">01</span><span class="step-symbol" aria-hidden="true">＋</span><h3>Share the details</h3><p>Tell us what you’re moving, where it’s going, and when you need it there.</p></article>
+          <article class="step-card"><span class="step-number">02</span><span class="step-symbol" aria-hidden="true">⌁</span><h3>Review your route</h3><p>Add the pickup and destination to see your estimated delivery fee.</p></article>
+          <article class="step-card"><span class="step-number">03</span><span class="step-symbol" aria-hidden="true">✓</span><h3>We take it from here</h3><p>Your request is saved to your account so you can return to it when you need to.</p></article>
+        </div>
+      </section>
+    </section>
+
+    <section class="app-view inner-view" id="deliveries-view" data-view="deliveries" hidden>
+      <div class="section-heading page-heading">
+        <div><p class="eyebrow">YOUR DELIVERY HISTORY</p><h1 class="page-title">My deliveries</h1></div>
+        <button class="button button-dark" type="button" data-app-view="order">Book a delivery <span aria-hidden="true">＋</span></button>
+      </div>
+      <div class="account-gate" id="deliveries-gate">
+        <p>Sign in to see your saved delivery requests and payment updates.</p>
+        <button class="button button-outline" type="button" data-app-view="account">Sign in to your account <span aria-hidden="true">→</span></button>
+      </div>
+      <p class="app-feedback" id="app-feedback" role="status" aria-live="polite" hidden></p>
+      <div class="app-order-list" id="app-order-list" aria-live="polite"></div>
+      <p class="app-status" id="deliveries-status" role="status" aria-live="polite"></p>
+    </section>
+
+    <section class="app-view inner-view" id="account-view" data-view="account" hidden>
+      <div class="section-heading page-heading">
+        <div><p class="eyebrow">YOUR A&amp;M ACCOUNT</p><h1 class="page-title">Account</h1></div>
+      </div>
+      <div class="app-panel" id="app-auth-panel">
+        <div class="auth-tabs" role="tablist" aria-label="Account access">
+          <button class="auth-tab active" type="button" role="tab" aria-selected="true" data-auth-view="login">Sign in</button>
+          <button class="auth-tab" type="button" role="tab" aria-selected="false" data-auth-view="register">Create account</button>
+        </div>
+        <form class="app-form" id="app-login-form">
+          <h2>Welcome back</h2>
+          <p>Sign in to manage your deliveries.</p>
+          <label>Email address<input name="email" type="email" autocomplete="email" required placeholder="you@example.com"></label>
+          <label>Password<input name="password" type="password" autocomplete="current-password" required minlength="8" placeholder="At least 8 characters"></label>
+          <button class="button button-dark" type="submit">Sign in <span aria-hidden="true">↗</span></button>
+          <p class="app-status" id="login-status" role="status" aria-live="polite"></p>
+        </form>
+        <form class="app-form" id="app-register-form" hidden>
+          <h2>Create your account</h2>
+          <p>Set up your account to start arranging deliveries.</p>
+          <label>Full name<input name="name" autocomplete="name" required placeholder="Your name"></label>
+          <label>Phone number<input name="phone" type="tel" autocomplete="tel" required placeholder="For delivery updates"></label>
+          <label>Email address<input name="email" type="email" autocomplete="email" required placeholder="you@example.com"></label>
+          <label>Password<input name="password" type="password" autocomplete="new-password" required minlength="8" placeholder="At least 8 characters"></label>
+          <label>Confirm password<input name="confirmPassword" type="password" autocomplete="new-password" required minlength="8" placeholder="Type it again"></label>
+          <button class="button button-dark" type="submit">Create account <span aria-hidden="true">↗</span></button>
+          <p class="app-status" id="register-status" role="status" aria-live="polite"></p>
+        </form>
+      </div>
+      <div class="app-panel account-summary" id="account-summary" hidden>
+        <p class="eyebrow">SIGNED IN</p>
+        <h2>Hello, <span id="app-customer-name"></span></h2>
+        <p id="app-customer-email"></p>
+        <button class="button button-outline" id="app-sign-out" type="button">Sign out</button>
+        <p class="app-status" id="account-status" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+
+    <section class="app-view inner-view" id="order-view" data-view="order" hidden>
+      <div class="section-heading page-heading">
+        <div><p class="eyebrow">PLAN A PICKUP</p><h1 class="page-title">Book a delivery</h1></div>
+        <button class="subtle-link" type="button" data-app-view="home"><span aria-hidden="true">←</span> Back to home</button>
+      </div>
+      <div class="account-gate" id="order-gate">
+        <p>Sign in or create an account before starting a delivery request.</p>
+        <button class="button button-dark" type="button" data-app-view="account">Continue to account <span aria-hidden="true">→</span></button>
+      </div>
+      <form class="app-panel app-form order-form" id="app-order-form" hidden>
+        <p class="form-intro">Add your item and route details. Calculate the route, transfer the estimated fee, then submit your request for A&amp;M to review.</p>
+        <label>What are we collecting?<input name="item" required placeholder="Box, chair, equipment..."></label>
+        <label>Number of items<input name="quantity" type="number" min="1" max="100" value="1" required></label>
+        <label>Describe the item<textarea name="description" rows="2" required placeholder="Size, weight, or anything we should handle carefully"></textarea></label>
+        <label class="upload-label">Photo of the item <span>Required · JPG, PNG, or WebP, up to 5 MB</span><input id="app-order-photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp" required></label>
+        <div class="photo-preview" id="app-photo-preview" hidden><img id="app-photo-preview-image" alt="Preview of the selected item"><div><strong id="app-photo-file-name"></strong><span>Ready to attach to your request</span></div><button id="app-remove-photo" type="button" aria-label="Remove selected photo">×</button></div>
+        <label>Pickup address<textarea name="pickup" rows="2" autocomplete="street-address" required placeholder="Street, city, state"></textarea></label>
+        <label>Delivery address<textarea name="delivery" rows="2" required placeholder="Street, city, state"></textarea></label>
+        <button class="button button-outline" id="app-calculate-route" type="button">Calculate route and fee</button>
+        <div class="fee-estimate" aria-live="polite"><span>Estimated delivery fee</span><strong id="app-delivery-price">Enter both addresses, then calculate your route.</strong><small id="app-route-distance">Route distance is calculated from your addresses.</small></div>
+        <section class="bank-transfer-panel"><h3>Pay A&amp;M Logistics</h3><div id="app-bank-details"><p>Bank details load when you open a delivery request.</p></div><small>Pay the estimate shown above. A&amp;M will review the final fee after receiving your request.</small></section>
+        <label>Bank transaction reference<input name="transferReference" required minlength="3" maxlength="100" autocomplete="off" placeholder="Reference shown by your bank"></label>
+        <label class="check-label"><input name="paidConfirmation" type="checkbox" required><span>I have completed the bank transfer to the A&amp;M account shown above.</span></label>
+        <label>Pickup contact email<input name="pickupEmail" type="email" autocomplete="email" required placeholder="person at pickup"></label>
+        <label>Delivery contact email<input name="deliveryEmail" type="email" required placeholder="person receiving the item"></label>
+        <label>Preferred pickup date<input name="date" type="date" required></label>
+        <label>Contact phone<input name="phone" type="tel" autocomplete="tel" required></label>
+        <label>Anything else we should know? <span class="optional">OPTIONAL</span><textarea name="notes" rows="2" placeholder="Access details, preferred time, or special instructions"></textarea></label>
+        <button class="button button-dark" type="submit">Submit delivery request <span aria-hidden="true">↗</span></button>
+        <p class="app-status" id="order-status" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <a class="brand" href="#home" data-app-view="home" aria-label="A and M Logistics app home">
+      <span class="brand-mark">A<span>&amp;</span>M</span>
+      <span class="brand-name">LOGISTICS</span>
+    </a>
+    <p>Good things get there.</p>
+  </footer>
+
+  <nav class="mobile-nav" aria-label="Customer app navigation">
+    <button class="active" type="button" data-app-view="home"><span aria-hidden="true">⌂</span><small>Home</small></button>
+    <button type="button" data-app-view="deliveries"><span aria-hidden="true">≡</span><small>Deliveries</small></button>
+    <button type="button" data-app-view="account"><span aria-hidden="true">○</span><small>Account</small></button>
+  </nav>
+</body>
+</html>

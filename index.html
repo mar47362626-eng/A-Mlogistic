@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f5f4ef">
-  <meta name="description" content="A&M Logistics makes moving goods simple, dependable, and right on time. Book local delivery, business logistics, or a tailored transport plan.">
-  <title>A&M Logistics | We move what matters</title>
+  <meta name="description" content="A&M Logistics provides reliable local delivery and business transport. Book a delivery and manage your requests online.">
+  <title>A&M Logistics | We deliver what matters</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -36,35 +36,35 @@
     <section class="hero" id="home">
       <div class="hero-copy">
         <p class="eyebrow"><span class="status-dot"></span> YOUR GOODS. IN GOOD HANDS.</p>
-        <h1>We move<br>what <span>matters.</span></h1>
-        <p class="hero-intro">From one important delivery to your whole operation, A&M makes getting it there feel straightforward.</p>
+        <h1>We deliver<br>what <span>matters.</span></h1>
+        <p class="hero-intro">From a single parcel to regular business deliveries, we help get your goods where they need to go.</p>
         <div class="hero-actions">
-          <a class="button button-dark" href="#customer-portal" data-auth-view="register">Plan a delivery <span aria-hidden="true">↗</span></a>
-          <a class="text-link" href="#services">Explore our services <span aria-hidden="true">↓</span></a>
+          <a class="button button-dark" href="#customer-portal" data-auth-view="register">Book a delivery <span aria-hidden="true">↗</span></a>
+          <a class="text-link" href="#services">See our services <span aria-hidden="true">↓</span></a>
         </div>
         <div class="order-confirmation" id="order-confirmation" aria-live="polite" hidden><p id="order-confirmation-message"></p></div>
-        <div class="hero-note"><span class="note-rule"></span><span>Thoughtful logistics.<br>People-first service.</span></div>
+        <div class="hero-note"><span class="note-rule"></span><span>Reliable delivery.<br>Friendly service.</span></div>
       </div>
       <div class="hero-visual">
         <img src="https://images.unsplash.com/photo-1519003722824-194d4455a60c?auto=format&fit=crop&w=1600&q=85" alt="A delivery truck travelling on an open road" fetchpriority="high">
-        <div class="image-caption"><span class="caption-icon" aria-hidden="true">↗</span><span>READY WHEN YOU ARE</span><span class="caption-line"></span></div>
+        <div class="image-caption"><span class="caption-icon" aria-hidden="true">↗</span><span>DELIVERY, MADE SIMPLE</span><span class="caption-line"></span></div>
         <div class="hero-index">01 <span>/</span> 03</div>
       </div>
       <a class="scroll-cue" href="#services" aria-label="Scroll to services"><span></span> SCROLL TO EXPLORE</a>
     </section>
 
     <section class="trust-strip" aria-label="Our approach">
-      <p>GOOD LOGISTICS ISN'T A LUXURY.<br><strong>IT'S HOW GOOD BUSINESS GETS DONE.</strong></p>
-      <div class="trust-items"><span>01 &nbsp; Dependable by design</span><span>02 &nbsp; Clear communication</span><span>03 &nbsp; Care at every mile</span></div>
+      <p>RELIABLE DELIVERY FOR EVERY CUSTOMER.<br><strong>HELPING EVERY BUSINESS MOVE FORWARD.</strong></p>
+      <div class="trust-items"><span>01 &nbsp; On-time service</span><span>02 &nbsp; Clear updates</span><span>03 &nbsp; Careful handling</span></div>
     </section>
 
     <section class="portal-section" id="customer-portal">
       <div class="portal-layout">
         <div class="portal-intro">
-          <p class="eyebrow">A&M CUSTOMER PORTAL</p>
-          <h2>Ready when<br>you <span>are.</span></h2>
-          <p>Create an account to tell us what needs picking up. Add a photo, share the delivery details, and keep your order information together.</p>
-          <div class="portal-promise"><span>01</span><p>Clear pickup and delivery details</p><span>02</span><p>A photo so we know what to expect</p><span>03</span><p>Your requests saved in one place</p></div>
+          <p class="eyebrow">YOUR DELIVERY ACCOUNT</p>
+          <h2>Your deliveries,<br>all in <span>one place.</span></h2>
+          <p>Create an account to book a delivery. Add the pickup and drop-off details, a photo, and the best time for collection.</p>
+          <div class="portal-promise"><span>01</span><p>Enter pickup and drop-off details</p><span>02</span><p>Add a photo of your item</p><span>03</span><p>See all your requests in one place</p></div>
         </div>
         <div class="portal-panel">
           <button class="portal-back" id="portal-back" type="button"><span aria-hidden="true">←</span> Back to A&M</button>
@@ -75,7 +75,7 @@
             </div>
             <form class="portal-form" id="login-form">
               <h3>Welcome back</h3>
-              <p class="form-lead">Log in to place an order or see your saved requests.</p>
+              <p class="form-lead">Sign in to book a delivery or check your requests.</p>
               <label>Email address<input name="email" type="email" autocomplete="email" required placeholder="you@example.com"></label>
               <label>Password<input name="password" type="password" autocomplete="current-password" required minlength="8" placeholder="At least 8 characters"></label>
               <button class="button button-dark" type="submit">Log in <span aria-hidden="true">↗</span></button>
@@ -83,7 +83,7 @@
             </form>
             <form class="portal-form" id="register-form" hidden>
               <h3>Set up your account</h3>
-              <p class="form-lead">A few details so we know who we're helping.</p>
+              <p class="form-lead">Enter your contact details so we can help with your delivery.</p>
               <div class="form-row">
                 <label>Full name<input name="name" autocomplete="name" required placeholder="Your name"></label>
                 <label>Phone number<input name="phone" type="tel" autocomplete="tel" required placeholder="For delivery updates"></label>
@@ -102,12 +102,12 @@
             <div class="feedback-banner" id="account-welcome-notice" role="status" aria-live="polite" hidden></div>
             <div class="dashboard-heading"><div><p class="eyebrow">YOUR A&M ACCOUNT</p><h3>Good to see you, <span id="customer-name"></span></h3></div><div class="dashboard-actions"><button class="button button-dark" id="show-order-form" type="button" aria-expanded="false" aria-controls="order-form">Place an order</button><button class="sign-out" id="sign-out" type="button">Log out</button></div></div>
             <form class="portal-form order-form" id="order-form" hidden>
-              <div><h3>Start a delivery order</h3><p class="form-lead">Calculate the route, transfer the estimated fee to the account below, then enter your transaction reference and submit your request. A&M will verify payment before dispatch.</p></div>
+              <div><h3>Book a delivery</h3><p class="form-lead">Enter the pickup and drop-off addresses to see an estimated fee. After you pay, enter your bank reference and send the request. A&M will check your payment before the delivery starts.</p></div>
               <div class="form-row">
                 <label>What are we collecting?<input name="item" required placeholder="Box, chair, equipment..."></label>
                 <label>Number of items<input name="quantity" type="number" min="1" max="100" value="1" required></label>
               </div>
-              <label>Describe the item<textarea name="description" rows="2" required placeholder="Size, weight, or anything we should handle carefully"></textarea></label>
+              <label>Describe the item<textarea name="description" rows="2" required placeholder="Tell us its size and weight, and if it needs special care"></textarea></label>
               <label class="upload-label">Photo of the item <span>Required · JPG, PNG, or WebP, up to 5 MB</span><input id="order-photo" name="photo" type="file" accept="image/jpeg,image/png,image/webp" required></label>
               <div class="photo-preview" id="photo-preview" hidden><img id="photo-preview-image" alt="Preview of the selected item"><div><strong id="photo-file-name"></strong><span>Ready to attach to your request</span></div><button id="remove-photo" type="button" aria-label="Remove selected photo">×</button></div>
               <div class="form-row address-row">
@@ -118,16 +118,16 @@
               <div class="fee-estimate" aria-live="polite">
                 <span>Estimated delivery fee</span>
                 <strong id="delivery-price-preview">Enter both addresses, then calculate your route.</strong>
-                <small id="route-distance">The website calculates driving distance from your addresses. Address lookup is sent to OpenStreetMap; driving routes use OSRM.</small>
+                <small id="route-distance">Enter both addresses to see the driving distance and estimated fee.</small>
                 <small><a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">© OpenStreetMap contributors</a></small>
               </div>
               <section class="bank-transfer-panel" aria-labelledby="bank-transfer-title">
-                <h4 id="bank-transfer-title">Pay A&amp;M Logistics</h4>
+                <h4 id="bank-transfer-title">A&amp;M bank details</h4>
                 <div id="order-bank-details" aria-live="polite"><p>Loading the bank account saved by A&amp;M...</p></div>
-                <small>Pay the estimated fee shown above. A&amp;M will review the route and contact you if the final fee needs to change. Use your name or phone number as the transfer narration.</small>
+                <small>Pay the estimated fee shown above. A&amp;M will check the route and let you know if the final fee changes. Use your name or phone number as the bank transfer note.</small>
               </section>
-              <label>Bank transaction reference<input name="transferReference" required minlength="3" maxlength="100" autocomplete="off" placeholder="Enter the reference shown by your bank"></label>
-              <label class="check-label"><input name="paidConfirmation" type="checkbox" required><span>I have completed the bank transfer to the A&amp;M account shown above.</span></label>
+              <label>Bank transfer reference<input name="transferReference" required minlength="3" maxlength="100" autocomplete="off" placeholder="Enter the reference from your bank"></label>
+              <label class="check-label"><input name="paidConfirmation" type="checkbox" required><span>I have sent the payment to the A&amp;M account shown above.</span></label>
               <div class="form-row">
                 <label>Pickup contact email<input name="pickupEmail" type="email" autocomplete="email" required placeholder="person at pickup"></label>
                 <label>Delivery contact email<input name="deliveryEmail" type="email" autocomplete="email" required placeholder="person receiving the item"></label>
@@ -143,48 +143,48 @@
             <div class="order-history"><div class="history-heading"><h3>Your saved requests</h3><span id="order-count">0 requests</span></div><div id="order-list" class="order-list"><p class="empty-orders">Your delivery requests will appear here.</p></div></div>
             <div class="customer-inbox"><div class="history-heading"><h3>Messages from A&M</h3><span id="notification-count">0 messages</span></div><div id="customer-notifications" class="customer-notification-list"><p class="empty-orders">No messages yet.</p></div></div>
           </div>
-          <p class="prototype-notice"><strong>Your account, in one place</strong> Accounts and delivery requests are saved to the A&M service and available when you sign in on this site.</p>
+          <p class="prototype-notice"><strong>Your account, in one place</strong> Sign in any time to see your delivery requests.</p>
         </div>
       </div>
     </section>
 
     <section class="services section-pad" id="services">
       <div class="section-heading">
-        <div><p class="eyebrow">WHAT WE CAN MOVE FOR YOU</p><h2>Less chasing.<br><span>More getting there.</span></h2></div>
-        <p class="section-intro">The right transport for the job, with a real person keeping the details on track.</p>
+        <div><p class="eyebrow">HOW WE CAN HELP</p><h2>Delivery that works<br><span>for you.</span></h2></div>
+        <p class="section-intro">Choose the delivery service you need. Our team will help with the details.</p>
       </div>
       <div class="service-grid">
         <article class="service-item">
           <span class="service-number">01</span><span class="service-icon" aria-hidden="true">↗</span>
-          <h3>Local delivery</h3><p>Reliable, careful delivery for the things your customers are waiting for.</p><a href="#customer-portal" data-auth-view="register" aria-label="Ask about local delivery">Ask us about this <span aria-hidden="true">→</span></a>
+          <h3>Local delivery</h3><p>Send parcels and other items to customers in your area.</p><a href="#customer-portal" data-auth-view="register" aria-label="Book a local delivery">Book a delivery <span aria-hidden="true">→</span></a>
         </article>
         <article class="service-item">
           <span class="service-number">02</span><span class="service-icon" aria-hidden="true">⌁</span>
-          <h3>Business logistics</h3><p>Practical support for regular routes, busy periods, and day-to-day operations.</p><a href="#customer-portal" data-auth-view="register" aria-label="Ask about business logistics">Ask us about this <span aria-hidden="true">→</span></a>
+          <h3>Business deliveries</h3><p>Get help with regular deliveries, busy periods, and daily business needs.</p><a href="#customer-portal" data-auth-view="register" aria-label="Book a business delivery">Book a delivery <span aria-hidden="true">→</span></a>
         </article>
         <article class="service-item">
           <span class="service-number">03</span><span class="service-icon" aria-hidden="true">＋</span>
-          <h3>Made-to-fit moves</h3><p>A considered plan for unusual loads, special handling, or a job with more moving parts.</p><a href="#customer-portal" data-auth-view="register" aria-label="Ask about tailored moves">Ask us about this <span aria-hidden="true">→</span></a>
+          <h3>Special deliveries</h3><p>Tell us if an item is large, fragile, or needs extra care.</p><a href="#customer-portal" data-auth-view="register" aria-label="Book a special delivery">Book a delivery <span aria-hidden="true">→</span></a>
         </article>
       </div>
     </section>
 
     <section class="about" id="about">
       <div class="about-image"><img src="https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1400&q=85" alt="Organised freight ready for careful handling" loading="lazy"><span class="image-stamp">A&M<br><small>ON YOUR SIDE</small></span></div>
-      <div class="about-copy"><p class="eyebrow">A BETTER KIND OF LOGISTICS PARTNER</p><h2>Not just a drop-off.<br><span>A follow-through.</span></h2><p>Moving goods is the practical part. Knowing where things stand, getting a straight answer, and feeling confident from pickup to arrival: that's the part we care about too.</p><p>A&M is built around dependable service, thoughtful planning, and treating every delivery like it belongs to someone who matters. Because it does.</p><a class="text-link dark-link" href="#how-it-works">Get to know our approach <span aria-hidden="true">→</span></a></div>
+      <div class="about-copy"><p class="eyebrow">HERE TO HELP AT EVERY STEP</p><h2>Careful delivery.<br><span>Clear updates.</span></h2><p>Know where your delivery is and what happens next. Our team is here to answer your questions from pickup to drop-off.</p><p>We handle every item with care and keep you informed along the way.</p><a class="text-link dark-link" href="#how-it-works">See how it works <span aria-hidden="true">→</span></a></div>
     </section>
 
     <section class="steps section-pad" id="how-it-works">
-      <div class="steps-heading"><p class="eyebrow">SIMPLE FROM THE START</p><h2>Three steps.<br><span>One less thing to worry about.</span></h2></div>
+      <div class="steps-heading"><p class="eyebrow">BOOKING IS SIMPLE</p><h2>Three simple steps<br><span>to book a delivery.</span></h2></div>
       <div class="step-list">
-        <article class="step"><span>01</span><div><h3>Tell us what needs moving</h3><p>Share the pickup, destination, timing, and anything we should know.</p></div><span class="step-arrow" aria-hidden="true">↗</span></article>
-        <article class="step"><span>02</span><div><h3>Get a clear plan</h3><p>We'll come back with the next steps and a quote that makes sense.</p></div><span class="step-arrow" aria-hidden="true">↗</span></article>
-        <article class="step"><span>03</span><div><h3>We'll take it from here</h3><p>We coordinate the details and keep you in the loop as it moves.</p></div><span class="step-arrow" aria-hidden="true">↗</span></article>
+        <article class="step"><span>01</span><div><h3>Enter your delivery details</h3><p>Tell us what you are sending, where to pick it up, and where it is going.</p></div><span class="step-arrow" aria-hidden="true">↗</span></article>
+        <article class="step"><span>02</span><div><h3>Review the fee and pay</h3><p>Check the estimated fee, then enter your bank transfer reference.</p></div><span class="step-arrow" aria-hidden="true">↗</span></article>
+        <article class="step"><span>03</span><div><h3>We deliver your item</h3><p>We will check your request and keep you updated as your item moves.</p></div><span class="step-arrow" aria-hidden="true">↗</span></article>
       </div>
     </section>
 
   </main>
 
-  <footer class="site-footer"><a class="brand footer-brand" href="#home"><span class="brand-mark">A<span>&</span>M</span><span class="brand-name">LOGISTICS</span></a><p>Good things get there.</p><span class="footer-legal">© <span id="year"></span> A&M Logistics</span><a class="admin-link" href="/admin">ADMIN</a><a class="back-top" href="#home">BACK TO TOP ↑</a></footer>
+  <footer class="site-footer"><a class="brand footer-brand" href="#home"><span class="brand-mark">A<span>&</span>M</span><span class="brand-name">LOGISTICS</span></a><p>Good things get there.</p><span class="footer-legal">© <span id="year"></span> A&amp;M Logistics</span><a class="back-top" href="#home">BACK TO TOP ↑</a></footer>
 </body>
 </html>
