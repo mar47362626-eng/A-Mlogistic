@@ -1,4 +1,4 @@
-name: Android APK
+name: Android apps
 
 on:
   push:
@@ -38,7 +38,7 @@ jobs:
         working-directory: android-app
         run: |
           APP_VERSION="${GITHUB_REF_NAME#android-v}"
-          gradle assembleDebug \
+          gradle assembleCustomerDebug assembleRiderDebug \
             -PreleaseVersion="$APP_VERSION" \
             -PreleaseVersionCode="$GITHUB_RUN_NUMBER"
 
@@ -46,7 +46,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp android-app/app/build/outputs/apk/debug/app-debug.apk ao-logistics.apk
-          gh release create "$GITHUB_REF_NAME" ao-logistics.apk \
+          cp android-app/app/build/outputs/apk/customer/debug/app-customer-debug.apk ao-logistics-customer.apk
+          cp android-app/app/build/outputs/apk/rider/debug/app-rider-debug.apk ao-logistics-rider.apk
+          gh release create "$GITHUB_REF_NAME" ao-logistics-customer.apk ao-logistics-rider.apk \
             --title "A&M Logistics Android $GITHUB_REF_NAME" \
             --generate-notes

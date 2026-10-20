@@ -16,7 +16,6 @@ import android.webkit.WebViewClient;
 import android.widget.Toast;
 
 public final class MainActivity extends Activity {
-    private static final String APP_URL = "https://a-mlogistic.netlify.app/user-app";
     private static final String APP_HOST = "a-mlogistic.netlify.app";
 
     private WebView webView;
@@ -82,7 +81,7 @@ public final class MainActivity extends Activity {
 
         setContentView(webView);
         if (savedInstanceState == null) {
-            webView.loadUrl(APP_URL);
+            webView.loadUrl(getString(R.string.app_url));
         } else {
             webView.restoreState(savedInstanceState);
         }

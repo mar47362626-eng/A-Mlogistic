@@ -39,13 +39,13 @@ Customers enter pickup and delivery addresses, then choose **Calculate route and
 
 After creating the Render service, set its build command to `npm ci`, start command to `npm start`, and leave **Root Directory** empty. Configure the server environment variables above in Render's dashboard. The Netlify site routes `/api/*` through a same-origin proxy configured in `netlify.toml`, and `api-client.js` uses the Netlify origin automatically. This keeps login cookies first-party in the browser and avoids third-party-cookie blocking. For GitHub Pages, `api-client.js` continues to use the Render API URL directly; use the matching Pages origin in `ALLOWED_ORIGINS` and do not include the repository path. Production auth cookies require HTTPS.
 
-## Android customer app
+## Android apps
 
-The Android wrapper in `android-app/` opens the customer portal at `https://a-mlogistic.netlify.app/user-app` and keeps the portal's account, delivery, and photo-upload features available inside the app. The **Get the app** link on the customer portal opens this repository's GitHub Releases page.
+The Android project in `android-app/` builds two separate apps: **A&M Logistics** opens the customer portal (`https://a-mlogistic.netlify.app/user-app`), and **A&M Rider** opens the rider portal (`https://a-mlogistic.netlify.app/rider-app`). They install independently and keep their respective portal features available in the app. The customer portal does not display an app download link.
 
-To build and publish a downloadable APK, push a version tag such as `android-v1.0.0`. The `Android APK` GitHub Actions workflow builds a debug-signed APK and attaches it to that release as `ao-logistics.apk`. The workflow requires no signing secrets. This APK is suitable for direct Android installation/testing, not for publishing to Google Play. GitHub's runner creates a debug signing key for each build, so installing a later APK may require uninstalling the earlier one first. Play Store distribution and seamless app updates require a separately configured release signing key, which must be stored as a GitHub Actions secret and never committed.
+To build and publish downloadable APKs, push a version tag such as `android-v1.0.0`. The `Android apps` GitHub Actions workflow builds debug-signed customer and rider APKs and attaches both to that release as `ao-logistics-customer.apk` and `ao-logistics-rider.apk`. The workflow requires no signing secrets. These APKs are suitable for direct Android installation/testing, not for publishing to Google Play. GitHub's runner creates a debug signing key for each build, so installing a later APK may require uninstalling the earlier APK of the same app first. Play Store distribution and seamless app updates require a separately configured release signing key, which must be stored as a GitHub Actions secret and never committed.
 
-For a local build, open `android-app/` in Android Studio with JDK 17 and Android SDK 35 installed, or run `gradle assembleDebug` from that directory. The generated APK is at `android-app/app/build/outputs/apk/debug/app-debug.apk`.
+For a local build, open `android-app/` in Android Studio with JDK 17 and Android SDK 35 installed, or run `gradle assembleCustomerDebug assembleRiderDebug` from that directory. The generated APKs are at `android-app/app/build/outputs/apk/customer/debug/app-customer-debug.apk` and `android-app/app/build/outputs/apk/rider/debug/app-rider-debug.apk`.
 
 ## Main workflows
 

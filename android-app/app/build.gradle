@@ -13,4 +13,15 @@ android {
         versionCode = (project.findProperty("releaseVersionCode") ?: "1").toString().toInteger()
         versionName = (project.findProperty("releaseVersion") ?: "1.0.0").toString()
     }
+
+    flavorDimensions "portal"
+    productFlavors {
+        customer {
+            dimension "portal"
+        }
+        rider {
+            dimension "portal"
+            applicationId "com.aom.logistics.rider"
+        }
+    }
 }
