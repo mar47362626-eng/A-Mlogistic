@@ -39,6 +39,14 @@ Customers enter pickup and delivery addresses, then choose **Calculate route and
 
 After creating the Render service, set its build command to `npm ci`, start command to `npm start`, and leave **Root Directory** empty. Configure the server environment variables above in Render's dashboard. The Netlify site routes `/api/*` through a same-origin proxy configured in `netlify.toml`, and `api-client.js` uses the Netlify origin automatically. This keeps login cookies first-party in the browser and avoids third-party-cookie blocking. For GitHub Pages, `api-client.js` continues to use the Render API URL directly; use the matching Pages origin in `ALLOWED_ORIGINS` and do not include the repository path. Production auth cookies require HTTPS.
 
+## Android customer app
+
+The Android wrapper in `android-app/` opens the customer portal at `https://a-mlogistic.netlify.app/user-app` and keeps the portal's account, delivery, and photo-upload features available inside the app. The **Get the app** link on the customer portal opens this repository's GitHub Releases page.
+
+To build and publish a downloadable APK, push a version tag such as `android-v1.0.0`. The `Android APK` GitHub Actions workflow builds a debug-signed APK and attaches it to that release as `ao-logistics.apk`. The workflow requires no signing secrets. This APK is suitable for direct Android installation/testing, not for publishing to Google Play. GitHub's runner creates a debug signing key for each build, so installing a later APK may require uninstalling the earlier one first. Play Store distribution and seamless app updates require a separately configured release signing key, which must be stored as a GitHub Actions secret and never committed.
+
+For a local build, open `android-app/` in Android Studio with JDK 17 and Android SDK 35 installed, or run `gradle assembleDebug` from that directory. The generated APK is at `android-app/app/build/outputs/apk/debug/app-debug.apk`.
+
 ## Main workflows
 
 - Customers register and receive a welcome email, then sign in and create delivery requests with pickup and delivery contact email addresses. The customer and configured admin accounts receive an email when a request is placed.

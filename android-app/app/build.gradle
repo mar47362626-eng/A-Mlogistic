@@ -1,0 +1,16 @@
+plugins {
+    id "com.android.application"
+}
+
+android {
+    namespace "com.aom.logistics"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "com.aom.logistics"
+        minSdk 23
+        targetSdk 34
+        versionCode (project.findProperty("releaseVersionCode") ?: "1").toInteger()
+        versionName project.findProperty("releaseVersion") ?: "1.0.0"
+    }
+}
