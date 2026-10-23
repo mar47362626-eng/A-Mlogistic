@@ -48,7 +48,31 @@
         <label>Email address<input name="email" type="email" autocomplete="username" required placeholder="you@example.com"></label>
         <label>Password<input name="password" type="password" autocomplete="current-password" minlength="8" required placeholder="Your password"></label>
         <button class="button button-dark" type="submit">Sign in <span aria-hidden="true">↗</span></button>
+        <p class="auth-switch">New to A&amp;M? <button class="text-button" type="button" data-auth-view="register">Create account</button></p>
         <p class="app-status" id="login-status" role="status" aria-live="polite"></p>
+      </form>
+    </section>
+
+    <section class="sign-in-view register-view" id="register-view" hidden>
+      <div class="sign-in-intro">
+        <h1>Start your<br><span>rider journey.</span></h1>
+      </div>
+      <form class="panel sign-in-form register-form" id="rider-app-register">
+        <p class="eyebrow">RIDER APPLICATION</p>
+        <h2>Create account</h2>
+        <p class="form-intro">Send your details to A&amp;M for review. Your rider dashboard opens after approval.</p>
+        <label>Full name<input name="name" type="text" autocomplete="name" maxlength="120" required placeholder="Your full name"></label>
+        <label>Phone number<input name="phone" type="tel" autocomplete="tel" maxlength="40" required placeholder="A number we can reach you on"></label>
+        <label>Email address<input name="email" type="email" autocomplete="email" required placeholder="you@example.com"></label>
+        <label>Vehicle type<select name="vehicle" required><option value="" disabled selected>Select your vehicle</option><option>Bicycle</option><option>Motorcycle</option><option>Car</option><option>Van</option><option>Other</option></select></label>
+        <label>Driving licence number<input name="license" type="text" autocomplete="off" maxlength="100" required placeholder="Enter your driving licence number"></label>
+        <label>Preferred delivery area<input name="area" type="text" maxlength="160" required placeholder="Town, city, or area"></label>
+        <label>Create password<input name="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required placeholder="At least 8 characters"></label>
+        <label>Confirm password<input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" maxlength="128" required placeholder="Type it again"></label>
+        <label class="register-consent"><input name="consent" type="checkbox" required><span>I confirm these details are accurate and may be used to contact me about rider registration.</span></label>
+        <button class="button button-dark" type="submit">Submit application <span aria-hidden="true">↗</span></button>
+        <p class="auth-switch">Already have an account? <button class="text-button" type="button" data-auth-view="login">Sign in</button></p>
+        <p class="app-status" id="register-status" role="status" aria-live="polite"></p>
       </form>
     </section>
 
@@ -57,6 +81,7 @@
       <h1 id="account-state-title">Application status</h1>
       <p id="account-state-message"></p>
       <p class="application-reference" id="application-reference"></p>
+      <p class="app-status application-notice" id="application-notice" role="status" aria-live="polite"></p>
       <button class="button button-outline" type="button" id="account-state-sign-out">Sign out</button>
       <p class="app-status" id="account-state-status" role="status" aria-live="polite"></p>
     </section>

@@ -39,8 +39,14 @@ a { color: inherit; text-decoration: none; }
 .sign-in-form h2, .payout-panel h2 { margin: 0; font: 700 22px var(--display); }
 .form-intro, .payout-panel > p:not(.payout-summary, .app-status) { margin: -9px 0 2px; color: var(--muted); font-size: 11px; line-height: 1.7; }
 .sign-in-form label, .payout-panel > label { display: grid; gap: 7px; color: #586158; font-size: 10px; font-weight: 700; }
-.sign-in-form input { width: 100%; min-height: 43px; padding: 10px; border: 1px solid var(--line); background: white; font-size: 12px; }
-.sign-in-form input:focus, .payout-panel select:focus, .handoff-form input:focus { outline: 2px solid #849a48; outline-offset: 1px; }
+.sign-in-form input, .sign-in-form select { width: 100%; min-height: 43px; padding: 10px; border: 1px solid var(--line); border-radius: 0; background: white; font-size: 12px; }
+.sign-in-form input:focus, .sign-in-form select:focus, .payout-panel select:focus, .handoff-form input:focus { outline: 2px solid #849a48; outline-offset: 1px; }
+.auth-switch { margin: 0; color: var(--muted); font-size: 11px; text-align: center; }
+.auth-switch .text-button { padding: 4px; color: #647c2d; }
+.register-consent { grid-template-columns: 20px 1fr; align-items: start; line-height: 1.6; }
+.register-consent input { width: 18px; min-height: 18px; margin: 0; accent-color: var(--forest); }
+.register-consent span { font-weight: 400; }
+.application-notice { max-width: 470px; color: #607b2f; }
 .button { min-height: 42px; display: inline-flex; align-items: center; justify-content: space-between; gap: 22px; padding: 0 15px; border: 0; font-size: 11px; font-weight: 700; }
 .button-dark { background: var(--forest); color: white; }
 .button-dark span { color: var(--lime); }
@@ -158,7 +164,10 @@ button, input, select { -webkit-tap-highlight-color: transparent; }
   .sign-in-form h2 { font-size: 22px; }
   .form-intro { margin: -8px 0 2px; font-size: 12px; }
   .sign-in-form label, .payout-panel > label { gap: 8px; font-size: 11px; }
-  .sign-in-form input { min-height: 50px; padding: 0 13px; border-color: #e1e5dd; border-radius: 11px; font-size: 14px; }
+  .sign-in-form input:not([type="checkbox"]), .sign-in-form select { min-height: 50px; padding: 0 13px; border-color: #e1e5dd; border-radius: 11px; font-size: 14px; }
+  .sign-in-form .register-consent { grid-template-columns: 20px 1fr; align-items: start; }
+  .sign-in-form .register-consent input { min-height: 18px; padding: 0; border-radius: 4px; }
+  .register-view { align-content: start; }
   .button { min-height: 48px; border-radius: 12px; font-size: 13px; }
   .button-dark { background: var(--forest); }
   .account-state { width: calc(100% - 36px); margin: 28px auto; padding: 23px; }

@@ -19,6 +19,7 @@ function setStatus(selector, message) {
 
 function showAccountState(rider) {
   document.querySelector('#sign-in-view').hidden = true;
+  document.querySelector('#register-view').hidden = true;
   document.querySelector('#rider-workspace').hidden = true;
   document.querySelector('.desktop-nav').hidden = true;
   document.querySelector('.mobile-nav').hidden = true;
@@ -27,15 +28,26 @@ function showAccountState(rider) {
   document.querySelector('#account-state-title').textContent = rider.status === 'Declined'
     ? 'Application update'
     : 'Application received';
+  setStatus('#application-notice', '');
   document.querySelector('#account-state-message').textContent = rider.status === 'Declined'
     ? `Your rider application was not approved at this time. Please contact A&M if you have questions.`
     : `Thanks, ${rider.name.split(' ')[0]}. A&M is reviewing your application. Your rider dashboard will be available if your application is approved.`;
   document.querySelector('#application-reference').textContent = `Application ${rider.reference} · ${rider.status}`;
 }
 
+function showAuthView(view) {
+  const registering = view === 'register';
+  document.querySelector('#sign-in-view').hidden = registering;
+  document.querySelector('#register-view').hidden = !registering;
+  setStatus('#login-status', '');
+  setStatus('#register-status', '');
+  window.scrollTo(0, 0);
+}
+
 function showSignIn(message = '') {
   activeRider = null;
   document.querySelector('#sign-in-view').hidden = false;
+  document.querySelector('#register-view').hidden = true;
   document.querySelector('#account-state').hidden = true;
   document.querySelector('#rider-workspace').hidden = true;
   document.querySelector('.desktop-nav').hidden = true;
@@ -487,6 +499,45 @@ document.querySelector('#rider-app-login').addEventListener('submit', async even
     }
   } catch (error) {
     setStatus('#login-status', error.message);
+  } finally {
+    submit.disabled = false;
+  }
+});
+
+document.querySelectorAll('[data-auth-view]').forEach(button => {
+  button.addEventListener('click', () => showAuthView(button.dataset.authView));
+});
+
+document.querySelector('#rider-app-register').addEventListener('submit', async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const submit = form.querySelector('[type="submit"]');
+  const values = new FormData(form);
+  setStatus('#register-status', '');
+  if (values.get('password') !== values.get('confirmPassword')) {
+    setStatus('#register-status', 'Those passwords do not match. Please check and try again.');
+    return;
+  }
+  submit.disabled = true;
+  try {
+    const result = await api.request('/api/rider/applications', {
+      method: 'POST',
+      body: JSON.stringify({
+        name: values.get('name'),
+        phone: values.get('phone'),
+        email: values.get('email'),
+        vehicle: values.get('vehicle'),
+        license: values.get('license'),
+        area: values.get('area'),
+        password: values.get('password'),
+      }),
+    });
+    form.reset();
+    activeRider = result.rider;
+    showAccountState(result.rider);
+    setStatus('#application-notice', result.warning || 'Your application is saved. A&M must approve it before you can access the rider dashboard.');
+  } catch (error) {
+    setStatus('#register-status', error.message);
   } finally {
     submit.disabled = false;
   }

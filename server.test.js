@@ -176,6 +176,15 @@ test('rider portal is configured as a standalone installable app', async () => {
   assert.match(html, /rel="manifest" href="rider-app\.webmanifest"/);
   assert.match(html, /apple-mobile-web-app-capable/);
   assert.doesNotMatch(html, /A&amp;M Logistics website/);
+  assert.match(html, /data-auth-view="register">Create account/);
+  assert.match(html, /id="rider-app-register"/);
+  for (const field of ['name', 'phone', 'email', 'vehicle', 'license', 'area', 'password', 'confirmPassword', 'consent']) {
+    assert.match(html, new RegExp(`name="${field}"`));
+  }
+  const appScript = fs.readFileSync(path.join(__dirname, 'rider-app.js'), 'utf8');
+  assert.match(appScript, /api\.request\('\/api\/rider\/applications'/);
+  assert.match(appScript, /Those passwords do not match/);
+  assert.match(appScript, /A&M must approve it before you can access the rider dashboard/);
   assert.equal(manifest.name, 'A&M Rider');
   assert.equal(manifest.display, 'standalone');
   assert.equal(manifest.start_url, '/rider-app');
