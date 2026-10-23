@@ -20,8 +20,11 @@ let emails;
 let failDeliveredEmail;
 let failInTransitEmail;
 let failNewOrderEmail;
+let stallNewOrderEmail;
+let stalledNewOrderEmailCalls;
 let failRiderApplicationEmail;
 let failCustomerWelcomeEmail;
+let calculatedRouteCalls;
 
 async function request(route, { method = 'GET', body, cookie } = {}) {
   const response = await fetch(`${baseUrl}${route}`, {
@@ -51,8 +54,11 @@ before(async () => {
   failDeliveredEmail = false;
   failInTransitEmail = false;
   failNewOrderEmail = false;
+  stallNewOrderEmail = false;
+  stalledNewOrderEmailCalls = 0;
   failRiderApplicationEmail = false;
   failCustomerWelcomeEmail = false;
+  calculatedRouteCalls = 0;
   database = createDatabase(':memory:');
   await seedAdmin(database);
   server = createApp(database, {
@@ -66,6 +72,10 @@ before(async () => {
       if (failNewOrderEmail && /delivery request|new delivery request/i.test(email.subject)) {
         throw new Error('Simulated new-order email outage.');
       }
+      if (stallNewOrderEmail && /delivery request|new delivery request/i.test(email.subject)) {
+        stalledNewOrderEmailCalls += 1;
+        return new Promise(() => {});
+      }
       if (failRiderApplicationEmail && /rider application received/i.test(email.subject)) {
         throw new Error('Simulated rider application email outage.');
       }
@@ -74,11 +84,14 @@ before(async () => {
       }
       emails.push(email);
     },
-    calculateRoute: async (pickup, delivery) => ({
-      distanceKm: 2.4,
-      pickupLabel: `${pickup}, Nigeria`,
-      deliveryLabel: `${delivery}, Nigeria`,
-    }),
+    calculateRoute: async (pickup, delivery) => {
+      calculatedRouteCalls += 1;
+      return {
+        distanceKm: 2.4,
+        pickupLabel: `${pickup}, Nigeria`,
+        deliveryLabel: `${delivery}, Nigeria`,
+      };
+    },
   }).listen(0, '127.0.0.1');
   await new Promise(resolve => server.once('listening', resolve));
   baseUrl = `http://127.0.0.1:${server.address().port}`;
@@ -660,11 +673,12 @@ test('customer and rider workflows share orders, assignment, and notifications',
   const routeEstimate = await request('/api/pricing/estimate', {
     method: 'POST',
     cookie: customer.cookie,
-    body: { pickup: 'Ibadan', delivery: 'Lagos' },
+    body: { pickup: 'One Street', delivery: 'Two Street' },
   });
   assert.equal(routeEstimate.response.status, 200);
   assert.equal(routeEstimate.result.distanceKm, 2.4);
   assert.equal(routeEstimate.result.estimatedFeeNgn, 5500);
+  const routeCallsAfterEstimate = calculatedRouteCalls;
   const customerRegistration = await request('/api/admin/registrations', { cookie: adminCookie });
   assert.deepEqual(
     customerRegistration.result.registrations.map(registration => registration.type).sort(),
@@ -687,6 +701,7 @@ test('customer and rider workflows share orders, assignment, and notifications',
   assert.equal(orderWithoutPaidConfirmation.response.status, 400);
   assert.match(orderWithoutPaidConfirmation.result.error, /confirm that you have completed/i);
 
+  const orderEmailStart = emails.length;
   const order = await request('/api/customer/orders', {
     method: 'POST',
     cookie: customer.cookie,
@@ -703,12 +718,14 @@ test('customer and rider workflows share orders, assignment, and notifications',
       notes: '',
       transferReference: 'BANK-TXN-2026-0042',
       paidConfirmation: true,
+      routeQuoteToken: routeEstimate.result.routeQuoteToken,
       deliveryPriceNgn: 1,
       deliveryDistanceKm: 1,
       photo: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
     },
   });
   assert.equal(order.response.status, 201);
+  assert.equal(calculatedRouteCalls, routeCallsAfterEstimate);
   assert.equal(order.result.order.status, 'Received');
   assert.equal(order.result.order.deliveryDistanceKm, 2.4);
   assert.equal(order.result.order.deliveryPriceNgn, 5500);
@@ -717,6 +734,9 @@ test('customer and rider workflows share orders, assignment, and notifications',
   assert.equal(order.result.order.transferReference, 'BANK-TXN-2026-0042');
   assert.equal(order.result.order.paymentSubmittedAmountNgn, 5500);
   assert.equal(order.result.order.riderEarningsNgn, null);
+  for (let attempt = 0; emails.length < orderEmailStart + 3 && attempt < 100; attempt += 1) {
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
   assert.ok(emails.slice(-3).every(email => /Estimated delivery fee: NGN 5,500/.test(email.text)));
   assert.deepEqual(
     emails.slice(-3).map(email => email.to).sort(),
@@ -1047,7 +1067,7 @@ test('customer and rider workflows share orders, assignment, and notifications',
   assert.ok(!customerNotificationsAfterRiderSend.result.notifications.some(notification => notification.subject === 'Rider-only update'));
   assert.ok(riderNotificationsAfterTargetedSend.result.notifications.some(notification => notification.subject === 'Rider-only update'));
 
-  failNewOrderEmail = true;
+  stallNewOrderEmail = true;
   const savedDespiteEmailFailure = await request('/api/customer/orders', {
     method: 'POST',
     cookie: customer.cookie,
@@ -1068,9 +1088,13 @@ test('customer and rider workflows share orders, assignment, and notifications',
       photo: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
     },
   });
-  failNewOrderEmail = false;
+  for (let attempt = 0; stalledNewOrderEmailCalls < 3 && attempt < 100; attempt += 1) {
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  stallNewOrderEmail = false;
   assert.equal(savedDespiteEmailFailure.response.status, 201);
-  assert.match(savedDespiteEmailFailure.result.warning, /request was saved/i);
+  assert.equal(savedDespiteEmailFailure.result.notificationPending, true);
+  assert.equal(stalledNewOrderEmailCalls, 3);
   const customerOrdersAfterNotificationFailure = await request('/api/customer/orders', { cookie: customer.cookie });
   assert.ok(customerOrdersAfterNotificationFailure.result.orders.some(
     savedOrder => savedOrder.id === savedDespiteEmailFailure.result.order.id,

@@ -7,6 +7,7 @@ let selectedPhotoUrl = '';
 let selectedPhotoDataUrl = '';
 let photoReadPromise = Promise.resolve();
 let calculatedRoute = null;
+let routeQuoteToken = '';
 let orderBankAvailable = false;
 const supportedPhotoTypes = new Set([
   'image/jpeg',
@@ -149,6 +150,7 @@ async function loadOrderBankDetails() {
 
 function invalidateCalculatedRoute() {
   calculatedRoute = null;
+  routeQuoteToken = '';
   deliveryPricePreview.textContent = 'Addresses changed. Calculate the route again to see the estimate.';
   routeDistance.textContent = 'Enter both addresses to see the driving distance and estimated fee.';
 }
@@ -405,6 +407,7 @@ async function calculateDeliveryRoute() {
       return;
     }
     calculatedRoute = { pickup, delivery };
+    routeQuoteToken = estimate.routeQuoteToken;
     deliveryPricePreview.textContent = formatNgn(estimate.estimatedFeeNgn);
     routeDistance.textContent = `Driving distance: ${estimate.distanceKm} km · ${estimate.pickupLabel} → ${estimate.deliveryLabel}. Pay this estimate; A&M will review the final fee after receiving your request.`;
   } catch (error) {
@@ -581,11 +584,13 @@ document.querySelector('#order-form').addEventListener('submit', async event => 
         notes: values.get('notes'),
         transferReference: values.get('transferReference'),
         paidConfirmation: values.get('paidConfirmation') === 'on',
+        routeQuoteToken,
         photo: selectedPhotoDataUrl,
       }),
     });
     form.reset();
     calculatedRoute = null;
+    routeQuoteToken = '';
     deliveryPricePreview.textContent = 'Enter both addresses, then calculate your route.';
     routeDistance.textContent = 'The website calculates driving distance from your addresses. Address lookup is sent to OpenStreetMap; driving routes use OSRM.';
     document.querySelector('#photo-preview').hidden = true;
@@ -600,7 +605,7 @@ document.querySelector('#order-form').addEventListener('submit', async event => 
       '#order-confirmation-message',
       result.warning
           ? `Request ${result.order.reference} and payment reference were saved, but one or more emails could not be sent. A&M can review the payment in the admin orders.`
-          : `Request ${result.order.reference} and your payment reference were sent to A&M. Payment is awaiting verification.`,
+          : `Request ${result.order.reference} and your payment reference were saved. A&M will review the request; email confirmations are processed separately.`,
     );
     document.querySelector('#order-confirmation').hidden = false;
     closeAuthScreen();

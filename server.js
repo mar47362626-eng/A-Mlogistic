@@ -829,6 +829,55 @@ function createApp(database, {
   const requireAdmin = authenticate(database, 'admin');
   const requireAdminRole = authenticate(database, null);
   const routeEstimateRequests = new Map();
+  const routeQuoteDuration = 10 * 60 * 1000;
+  const routeQuoteSecret = process.env.SUPABASE_SERVICE_ROLE_KEY
+    || process.env.ADMIN_PASSWORD
+    || crypto.randomBytes(32);
+  const addressHash = address => crypto.createHash('sha256')
+    .update(address.trim().toLowerCase())
+    .digest('hex');
+  const issueRouteQuote = (userId, pickup, delivery, route) => {
+    const payload = Buffer.from(JSON.stringify({
+      userId,
+      pickupHash: addressHash(pickup),
+      deliveryHash: addressHash(delivery),
+      route,
+      expiresAt: Date.now() + routeQuoteDuration,
+    })).toString('base64url');
+    const signature = crypto.createHmac('sha256', routeQuoteSecret).update(payload).digest('base64url');
+    return `${payload}.${signature}`;
+  };
+  const readRouteQuote = (token, userId, pickup, delivery) => {
+    if (typeof token !== 'string' || token.length > 4096) return null;
+    const [payload, signature, extra] = token.split('.');
+    if (!payload || !signature || extra !== undefined) return null;
+    const expectedSignature = crypto.createHmac('sha256', routeQuoteSecret).update(payload).digest();
+    let providedSignature;
+    try {
+      providedSignature = Buffer.from(signature, 'base64url');
+    } catch {
+      return null;
+    }
+    if (providedSignature.length !== expectedSignature.length
+      || !crypto.timingSafeEqual(providedSignature, expectedSignature)) return null;
+    let quote;
+    try {
+      quote = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
+    } catch {
+      return null;
+    }
+    if (quote.userId !== userId
+      || quote.pickupHash !== addressHash(pickup)
+      || quote.deliveryHash !== addressHash(delivery)
+      || !Number.isSafeInteger(quote.expiresAt)
+      || quote.expiresAt <= Date.now()
+      || !Number.isFinite(quote.route?.distanceKm)
+      || quote.route.distanceKm <= 0
+      || quote.route.distanceKm > 100_000
+      || typeof quote.route.pickupLabel !== 'string'
+      || typeof quote.route.deliveryLabel !== 'string') return null;
+    return quote.route;
+  };
   const adminEmails = async () => {
     const registeredEmails = (await database.list('users', user => user.role === 'admin')).map(admin => admin.email);
     const configuredEmail = normalizeEmail(process.env.ADMIN_EMAIL);
@@ -1052,6 +1101,7 @@ function createApp(database, {
       response.json({
         ...route,
         estimatedFeeNgn: estimateDeliveryFee(route.distanceKm),
+        routeQuoteToken: issueRouteQuote(userId, pickup, delivery, route),
       });
     } catch (error) {
       next(error);
@@ -1298,7 +1348,12 @@ function createApp(database, {
       }
       const phone = textField(request.body, 'phone', { max: 40 });
       const notes = textField(request.body, 'notes', { min: 0, max: 1200 });
-      const route = await calculateRoute(pickup, delivery);
+      const route = readRouteQuote(
+        request.body.routeQuoteToken,
+        request.auth.principalId,
+        pickup,
+        delivery,
+      ) || await calculateRoute(pickup, delivery);
       const deliveryDistanceKm = route.distanceKm;
       const deliveryPriceNgn = estimateDeliveryFee(deliveryDistanceKm);
       const { photo, type } = parsePhoto(request.body.photo);
@@ -1344,11 +1399,8 @@ function createApp(database, {
         delivery_code_expires_at: null,
         delivery_code_attempts: 0,
       });
-      const customer = await database.find('users', user => user.id === request.auth.principalId);
-      const adminRecipients = await adminEmails();
       const details = [
         `Delivery request ${reference} was received.`,
-        `Customer: ${customer?.name || customer?.email || 'Customer'} (${customer?.email || ''})`,
         `Item: ${quantity} × ${item}`,
         `Pickup: ${pickup}`,
         `Delivery: ${delivery}`,
@@ -1357,30 +1409,39 @@ function createApp(database, {
         `Bank: ${bank.bankName}; account name: ${bank.accountName}; account number: ${bank.accountNumber}.`,
         'The customer says the transfer is complete. Verify the transaction in the bank account before confirming payment.',
       ];
-      const notificationWarning = await sendNotifications([
-        sendEmail({
-          to: customer.email,
-          subject: `Delivery request ${reference} received`,
-          ...orderEmailContent(
-            order,
-            'Your delivery request is in',
-            details.slice(0, 1).concat(
-              `Pickup: ${pickup}`,
-              `Delivery: ${delivery}`,
-              `Estimated delivery fee: ${formatNaira(deliveryPriceNgn)} based on approximately ${deliveryDistanceKm} km.`,
-              `Transfer reference submitted: ${transferReference}. A&M will verify the payment before dispatch.`,
-            ),
-          ),
-        }),
-        ...adminRecipients.map(email => sendEmail({
-          to: email,
-          subject: `New delivery request ${reference}`,
-          ...orderEmailContent(order, 'New delivery request', details),
-        })),
-      ], 'New delivery request');
+      setImmediate(() => {
+        void (async () => {
+          const customer = await database.find('users', user => user.id === request.auth.principalId);
+          const adminRecipients = await adminEmails();
+          const customerDetails = [
+            details[0],
+            `Pickup: ${pickup}`,
+            `Delivery: ${delivery}`,
+            `Estimated delivery fee: ${formatNaira(deliveryPriceNgn)} based on approximately ${deliveryDistanceKm} km.`,
+            `Transfer reference submitted: ${transferReference}. A&M will verify the payment before dispatch.`,
+          ];
+          await sendNotifications([
+            ...(customer?.email ? [sendEmail({
+              to: customer.email,
+              subject: `Delivery request ${reference} received`,
+              ...orderEmailContent(order, 'Your delivery request is in', customerDetails),
+            })] : []),
+            ...adminRecipients.map(email => sendEmail({
+              to: email,
+              subject: `New delivery request ${reference}`,
+              ...orderEmailContent(order, 'New delivery request', [
+                ...details,
+                `Customer: ${customer?.name || customer?.email || 'Customer'} (${customer?.email || ''})`,
+              ]),
+            })),
+          ], 'New delivery request');
+        })().catch(error => {
+          console.error('New delivery request notifications could not be prepared:', error);
+        });
+      });
       response.status(201).json({
         order: await publicOrder(database, order, { includeTransferReference: true }),
-        ...(notificationWarning ? { warning: 'Your request was saved, but one or more order emails could not be sent.' } : {}),
+        notificationPending: true,
       });
     } catch (error) {
       next(error);
