@@ -27,7 +27,7 @@ Production, including the app running on Render, uses Supabase PostgreSQL. The a
 - `DELIVERY_BASE_FEE_NGN` and `DELIVERY_RATE_PER_KM_NGN`: optional estimate settings; defaults are `2500` and `1000`.
 - Rider earnings are 5% of the amount the customer reports paying and A&M verifies. Earnings are recorded when delivery is completed and rounded to the nearest whole naira. Riders can request unclaimed earnings for completed weeks from the rider dashboard; admins review requests in the Delivered workspace and mark them paid or declined.
 
-The server requires valid Supabase credentials in production and does not silently fall back to local JSON files. Local development can continue using JSON storage without Supabase credentials. Existing local JSON/SQLite data is not copied automatically; migrate existing records before switching production traffic if you need to retain them. Do not put `.env` or any service-role key in GitHub.
+The server requires valid Supabase credentials in production and does not silently fall back to local JSON files. The Supabase URL must use HTTPS because the server sends its service-role key with database requests. Production also requires an administrator to be provisioned before the server starts: set the private `ADMIN_EMAIL` and `ADMIN_PASSWORD` environment variables, or retain an existing admin account. The public admin-registration endpoint only allows a signed-in administrator to add another admin; never enable public first-admin registration. Local development can continue using JSON storage without Supabase credentials. Existing local JSON/SQLite data is not copied automatically; migrate existing records before switching production traffic if you need to retain them. Do not put `.env` or any service-role key in GitHub.
 
 If Render reports `permission denied for table app_records`, rerun `supabase-schema.sql` in the matching Supabase project's SQL Editor and confirm that Render's `SUPABASE_SERVICE_ROLE_KEY` is that same project's service-role secret key, not its anon/publishable key. The schema grants table access to `service_role`.
 
@@ -46,6 +46,18 @@ The Android project in `android-app/` builds two separate apps: **A&M Logistics*
 To build and publish downloadable APKs, push a version tag such as `android-v1.0.0`. The `Android apps` GitHub Actions workflow builds debug-signed customer and rider APKs and attaches both to that release as `ao-logistics-customer.apk` and `ao-logistics-rider.apk`. The workflow requires no signing secrets. These APKs are suitable for direct Android installation/testing, not for publishing to Google Play. GitHub's runner creates a debug signing key for each build, so installing a later APK may require uninstalling the earlier APK of the same app first. Play Store distribution and seamless app updates require a separately configured release signing key, which must be stored as a GitHub Actions secret and never committed.
 
 For a local build, open `android-app/` in Android Studio with JDK 17 and Android SDK 35 installed, or run `gradle assembleCustomerDebug assembleRiderDebug` from that directory. The generated APKs are at `android-app/app/build/outputs/apk/customer/debug/app-customer-debug.apk` and `android-app/app/build/outputs/apk/rider/debug/app-rider-debug.apk`.
+
+### Publishing on Google Play
+
+The release APKs above are debug builds and cannot be submitted to Google Play. Create a Play Console developer account, configure a private release upload key and release signing in Gradle, then build signed Android App Bundles with `gradle bundleCustomerRelease bundleRiderRelease`. Keep the keystore and passwords outside the repository and back them up securely; enroll each app in Play App Signing. Create separate Play Console listings for the customer and rider apps, complete their store listings, privacy/Data safety declarations, content ratings, and testing/review steps, and upload each app's `.aab` to its own listing.
+
+Before submission, update the Android build to meet Google's current target API requirement. As of August 31, 2026, new apps and updates must target Android 16 (API level 36) or higher. This project currently targets API 34, so it is not Play-ready yet. Google may also reject apps that provide too little functionality beyond a website; review its [target API requirements](https://support.google.com/googleplay/android-developer/answer/11926878) and current app quality policies before submitting.
+
+## iOS apps
+
+The iOS project in `ios-app/` contains two separate Xcode targets: **A&M Logistics** opens the customer portal and **A&M Rider** opens the rider portal. Open `ios-app/AoLogistics.xcodeproj` on a Mac with Xcode, select either the `Customer` or `Rider` scheme, choose an iPhone simulator or connected device, and run the app. Before installing on a physical device or archiving for the App Store, configure your Apple Developer team and the matching app's signing settings in Xcode.
+
+Publishing requires an Apple Developer Program account, App Store Connect records for both distinct bundle IDs, store screenshots and privacy details, and an App Store review for each app. Apple may reject apps that only wrap a website, so review its minimum-functionality requirements and add native value if needed before submitting. Building, signing, and uploading iOS apps requires macOS and Xcode.
 
 ## Main workflows
 
