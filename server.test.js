@@ -135,10 +135,10 @@ test('separate site pages are served and protected APIs enforce roles', async ()
   assert.equal(riderAppJs.status, 200);
   assert.match(await home.text(), /We deliver/);
   assert.match(await riderPage.text(), /RIDER APPLICATION/);
-  assert.match(await riderAppPage.text(), /A&amp;M RIDER APP/);
+  assert.match(await riderAppPage.text(), /rel="manifest" href="rider-app\.webmanifest"/);
   assert.match(await userAppPage.text(), /Your delivery hub/);
   assert.match(await cleanUserAppPage.text(), /data-view="home"/);
-  assert.match(await cleanRiderAppPage.text(), /A&amp;M RIDER APP/);
+  assert.match(await cleanRiderAppPage.text(), /Welcome<br><span>back\.<\/span>/);
   assert.match(await cleanAdminPage.text(), /A&M Logistics/);
   assert.match(await cleanRiderPage.text(), /RIDER APPLICATION/);
   assert.equal(adminData.response.status, 401);
@@ -157,6 +157,33 @@ test('separate site pages are served and protected APIs enforce roles', async ()
     body: { pickup: 'Ibadan', delivery: 'Lagos' },
   });
   assert.equal(anonymousRouteEstimate.response.status, 401);
+});
+
+test('rider portal is configured as a standalone installable app', async () => {
+  const html = fs.readFileSync(path.join(__dirname, 'rider-app.html'), 'utf8');
+  const styles = fs.readFileSync(path.join(__dirname, 'rider-app.css'), 'utf8');
+  const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, 'rider-app.webmanifest'), 'utf8'));
+  const [manifestResponse, icon192Response, icon512Response] = await Promise.all([
+    fetch(`${baseUrl}/rider-app.webmanifest`),
+    fetch(`${baseUrl}/rider-app-icon-192.png`),
+    fetch(`${baseUrl}/rider-app-icon-512.png`),
+  ]);
+
+  assert.equal(manifestResponse.status, 200);
+  assert.match(manifestResponse.headers.get('content-type'), /manifest\+json|application\/json/);
+  assert.equal(icon192Response.status, 200);
+  assert.equal(icon512Response.status, 200);
+  assert.match(html, /rel="manifest" href="rider-app\.webmanifest"/);
+  assert.match(html, /apple-mobile-web-app-capable/);
+  assert.doesNotMatch(html, /A&amp;M Logistics website/);
+  assert.equal(manifest.name, 'A&M Rider');
+  assert.equal(manifest.display, 'standalone');
+  assert.equal(manifest.start_url, '/rider-app');
+  assert.match(styles, /#nl-badge-frame\s*\{\s*display:\s*none !important;/);
+  assert.match(styles, /env\(safe-area-inset-bottom\)/);
+  for (const size of [192, 512]) {
+    assert.ok(fs.existsSync(path.join(__dirname, `rider-app-icon-${size}.png`)));
+  }
 });
 
 test('Netlify proxies API requests through its own origin to keep auth cookies first-party', () => {

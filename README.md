@@ -1,6 +1,6 @@
 # A&M Logistics website
 
-The customer site (`index.html`), customer app (`/user-app`), rider registration (`/rider`), rider app (`/rider-app`), and admin pages (`/admin`) are separate pages. Express serves them from the same host and provides the shared API, so customer accounts, delivery requests, rider reviews, assignments, and notifications work across browsers and devices.
+The customer site (`index.html`), customer app (`/user-app`), rider registration (`/rider`), rider app (`/rider-app`), and admin pages (`/admin`) are separate pages. The rider app is installable as a standalone mobile app from its browser menu; Android browsers also show an in-app install prompt when available. Express serves the pages from the same host and provides the shared API, so customer accounts, delivery requests, rider reviews, assignments, and notifications work across browsers and devices.
 
 The production web app is served from Render at `https://a-mlogistic.onrender.com`. The frontend API client uses that URL; the server also hosts the frontend, so use the Render URL for the public site. Admin, rider registration, customer app, and rider app are available at `/admin`, `/rider`, `/user-app`, and `/rider-app`. Their `.html` URLs and trailing-slash versions redirect to these clean paths.
 

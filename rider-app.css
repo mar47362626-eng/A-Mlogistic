@@ -107,28 +107,138 @@ a { color: inherit; text-decoration: none; }
 .app-footer { min-height: 62px; padding: 13px max(5%, calc((100% - 1200px) / 2)); display: flex; justify-content: space-between; align-items: center; gap: 15px; border-top: 1px solid var(--line); color: var(--muted); font-size: 10px; }
 .app-footer a { color: #647c2d; font-weight: 700; }
 .mobile-nav { display: none; }
+#nl-badge-frame { display: none !important; }
+.app-footer { display: none; }
+button, input, select { -webkit-tap-highlight-color: transparent; }
 @media (max-width: 720px) {
-  body { padding-top: 62px; padding-bottom: 74px; }
-  .app-header { height: 62px; padding: 0 5%; }
+  :root { color-scheme: light; }
+  body {
+    min-height: 100vh;
+    min-height: 100dvh;
+    padding: calc(62px + env(safe-area-inset-top)) 0 calc(72px + env(safe-area-inset-bottom));
+    background: #f4f5f1;
+  }
+  .app-header {
+    height: calc(62px + env(safe-area-inset-top));
+    padding: env(safe-area-inset-top) 19px 0;
+    background: var(--forest);
+    border: 0;
+    color: white;
+  }
+  .brand { gap: 8px; }
+  .brand-mark { font-size: 24px; }
+  .brand-mark span { color: var(--lime); }
+  .brand-name { color: rgba(255,255,255,.76); font-size: 8px; letter-spacing: 1.4px; }
   .desktop-nav { display: none !important; }
-  .app-shell { width: 90%; min-height: calc(100vh - 130px); }
-  .sign-in-view { min-height: auto; grid-template-columns: 1fr; gap: 24px; padding: 34px 0; }
-  .sign-in-intro h1 { font-size: 42px; }
-  .sign-in-intro > p:not(.eyebrow) { font-size: 12px; }
-  .welcome { grid-template-columns: 1fr; gap: 20px; padding: 25px 6%; }
-  .welcome h1 { font-size: 42px; }
-  .stat-grid { grid-template-columns: 1fr; gap: 8px; margin-bottom: 18px; }
-  .stat-card { min-height: 73px; }
-  .delivery-list { grid-template-columns: 1fr; }
-  .delivery-photo { height: 165px; }
-  .section-heading h1 { font-size: 27px; }
-  .inner-view { padding-top: 21px; }
-  .app-footer { justify-content: center; flex-direction: column; gap: 7px; padding-bottom: 12px; }
-  .mobile-nav { position: fixed; z-index: 15; right: 0; bottom: 0; left: 0; height: calc(62px + env(safe-area-inset-bottom)); padding: 5px 5px env(safe-area-inset-bottom); display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--line); background: rgba(255,255,255,.97); }
-  .mobile-nav button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 0; background: transparent; color: var(--muted); }
-  .mobile-nav button > span { font-size: 18px; }
-  .mobile-nav small { font-size: 8px; font-weight: 700; }
-  .mobile-nav button.active { color: #647c2d; }
+  .header-action {
+    min-height: 38px;
+    padding: 0 12px;
+    border: 1px solid rgba(255,255,255,.22);
+    border-radius: 12px;
+    background: rgba(255,255,255,.08);
+    color: white;
+    font-size: 11px;
+  }
+  .app-shell { width: 100%; min-height: calc(100dvh - 134px); margin: 0; }
+  .sign-in-view {
+    min-height: calc(100dvh - 134px);
+    grid-template-columns: 1fr;
+    align-content: center;
+    gap: 17px;
+    padding: 28px 20px;
+  }
+  .sign-in-intro { padding: 0 4px; }
+  .sign-in-intro .eyebrow { margin-bottom: 8px; }
+  .sign-in-intro h1 { margin: 0; font-size: 32px; line-height: 1.1; letter-spacing: -1.4px; }
+  .sign-in-intro > p:not(.eyebrow) { margin: 8px 0 0; font-size: 12px; line-height: 1.55; }
+  .sign-in-intro .apply-link { margin-top: 12px; font-size: 11px; }
+  .panel { border: 1px solid #e4e8e0; border-radius: 18px; box-shadow: 0 8px 24px rgba(38,59,50,.055); }
+  .sign-in-form { gap: 15px; padding: 22px 19px; }
+  .sign-in-form .eyebrow { margin: 0; }
+  .sign-in-form h2 { font-size: 22px; }
+  .form-intro { margin: -8px 0 2px; font-size: 12px; }
+  .sign-in-form label, .payout-panel > label { gap: 8px; font-size: 11px; }
+  .sign-in-form input { min-height: 50px; padding: 0 13px; border-color: #e1e5dd; border-radius: 11px; font-size: 14px; }
+  .button { min-height: 48px; border-radius: 12px; font-size: 13px; }
+  .button-dark { background: var(--forest); }
+  .account-state { width: calc(100% - 36px); margin: 28px auto; padding: 23px; }
+  .account-state h1 { margin: 8px 0 12px; font-size: 27px; }
+  .workspace { padding: 15px 16px 30px; }
+  .welcome {
+    min-height: auto;
+    grid-template-columns: 1fr;
+    gap: 17px;
+    padding: 21px;
+    border-radius: 20px;
+    background: var(--forest);
+    color: white;
+  }
+  .welcome .eyebrow { color: #d2e6a0; }
+  .welcome h1 { margin: 9px 0; font-size: 32px; line-height: 1.06; letter-spacing: -1.3px; }
+  .welcome h1 span { color: var(--lime); }
+  .welcome-copy { margin: 0 0 14px; color: rgba(255,255,255,.75); font-size: 12px; }
+  .welcome .button-dark { background: var(--lime); color: var(--forest); }
+  .welcome .button-dark span { color: var(--forest); }
+  .rider-summary { padding: 14px 15px; border-radius: 14px; color: var(--ink); }
+  .rider-summary > .eyebrow { color: #71804f; }
+  .rider-summary > div { padding: 9px 0; font-size: 11px; }
+  .stat-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 11px 0 18px; }
+  .stat-card { min-height: 76px; padding: 11px 9px; gap: 8px; border-color: #e7eae3; border-radius: 14px; box-shadow: 0 4px 14px rgba(38,59,50,.035); }
+  .stat-card span { font-size: 7px; line-height: 1.35; letter-spacing: .35px; }
+  .stat-card strong { font-size: 15px; }
+  .section-heading h1 { font-size: 26px; letter-spacing: -.7px; }
+  .section-heading h2 { font-size: 17px; }
+  .section-heading .eyebrow { font-size: 8px; }
+  .home-deliveries { margin-top: 0; padding: 17px 13px; }
+  .home-deliveries .section-heading { padding: 0 2px; }
+  .text-button { font-size: 11px; }
+  .inner-view { padding: 8px 0 28px; }
+  .page-heading { margin-bottom: 13px; }
+  .delivery-list { grid-template-columns: 1fr; gap: 11px; }
+  .delivery-card { padding: 14px; border-color: #e6e9e2; border-radius: 16px; box-shadow: 0 5px 15px rgba(38,59,50,.04); }
+  .delivery-photo { height: 170px; border-radius: 11px; }
+  .delivery-card h2 { font-size: 14px; }
+  .delivery-card > p { font-size: 11px; }
+  .delivery-status { border-radius: 20px; }
+  .handoff { margin-top: 15px; }
+  .handoff p { font-size: 11px; }
+  .handoff .button { margin-top: 6px; }
+  .handoff-form { align-items: stretch; }
+  .handoff-form label { flex-basis: 100%; font-size: 10px; }
+  .handoff-form input { min-height: 48px; border-radius: 11px; font-size: 16px; }
+  .message-list { gap: 10px; }
+  .message-card { padding: 16px; border: 1px solid #e5e9e1; border-left: 4px solid #829c3b; border-radius: 15px; }
+  .message-card h2 { font-size: 14px; }
+  .message-card p { font-size: 12px; }
+  .message-card time { font-size: 10px; }
+  .payout-panel { gap: 14px; padding: 19px 16px; }
+  .payout-panel > p:not(.payout-summary, .app-status) { font-size: 12px; }
+  .payout-controls { display: grid; grid-template-columns: 1fr; }
+  .payout-panel select { min-height: 48px; width: 100%; border-radius: 11px; font-size: 13px; }
+  .payout-summary { font-size: 12px; }
+  .payout-deliveries { gap: 9px; padding: 14px; border-radius: 12px; }
+  .payout-deliveries p, .payout-history p { font-size: 11px; }
+  .empty-message { padding: 18px; border-color: #e6e9e2; border-radius: 14px; font-size: 12px; }
+  .app-footer { display: none !important; }
+  .mobile-nav {
+    position: fixed;
+    z-index: 25;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: calc(68px + env(safe-area-inset-bottom));
+    padding: 5px 8px calc(5px + env(safe-area-inset-bottom));
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border-top: 1px solid #e8ebe5;
+    background: rgba(255,255,255,.97);
+    box-shadow: 0 -8px 24px rgba(38,59,50,.07);
+    backdrop-filter: blur(18px);
+  }
+  .mobile-nav button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 0; border-radius: 13px; background: transparent; color: #81887f; }
+  .mobile-nav button svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .mobile-nav small { font-size: 9px; font-weight: 700; }
+  .mobile-nav button.active { color: var(--forest); background: #eef2e6; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }

@@ -2,6 +2,7 @@ let activeRider = null;
 let riderOrders = [];
 let riderPayouts = [];
 let refreshInProgress = false;
+let installPrompt = null;
 
 const views = [...document.querySelectorAll('[data-view]')];
 const formatNgn = amount => new Intl.NumberFormat('en-NG', {
@@ -531,6 +532,24 @@ document.querySelector('#request-payout').addEventListener('click', async event 
     setStatus('#payout-status', error.message);
     button.disabled = false;
   }
+});
+
+window.addEventListener('beforeinstallprompt', event => {
+  event.preventDefault();
+  installPrompt = event;
+  document.querySelector('#install-app').hidden = false;
+});
+
+document.querySelector('#install-app').addEventListener('click', async () => {
+  if (!installPrompt) return;
+  await installPrompt.prompt();
+  installPrompt = null;
+  document.querySelector('#install-app').hidden = true;
+});
+
+window.addEventListener('appinstalled', () => {
+  installPrompt = null;
+  document.querySelector('#install-app').hidden = true;
 });
 
 checkRiderSession();

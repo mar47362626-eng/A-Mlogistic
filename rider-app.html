@@ -5,8 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#263b32">
   <meta name="description" content="A&M rider app. Check assigned deliveries, verify handovers, read messages, and review your earnings.">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="A&M Rider">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <title>Rider app | A&amp;M Logistics</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="apple-touch-icon" href="rider-app-icon-192.png">
+  <link rel="manifest" href="rider-app.webmanifest">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
@@ -27,20 +33,18 @@
       <button type="button" data-rider-view="earnings">Earnings</button>
     </nav>
     <button class="header-action" type="button" id="header-sign-out" hidden>Sign out</button>
+    <button class="header-action install-action" type="button" id="install-app" hidden>Install app</button>
   </header>
 
   <main class="app-shell">
     <section class="sign-in-view" id="sign-in-view">
       <div class="sign-in-intro">
-        <p class="eyebrow">A&amp;M RIDER APP</p>
-        <h1>Your deliveries.<br><span>Your day.</span></h1>
-        <p>Sign in to check your assigned deliveries, confirm handovers, read updates, and review your earnings.</p>
-        <a class="apply-link" href="rider.html">New to A&amp;M? Apply to ride <span aria-hidden="true">↗</span></a>
+        <h1>Welcome<br><span>back.</span></h1>
       </div>
       <form class="panel sign-in-form" id="rider-app-login">
         <p class="eyebrow">RIDER ACCOUNT</p>
         <h2>Sign in</h2>
-        <p class="form-intro">Use the email address and password from your rider application.</p>
+        <p class="form-intro">Continue to your rider dashboard.</p>
         <label>Email address<input name="email" type="email" autocomplete="username" required placeholder="you@example.com"></label>
         <label>Password<input name="password" type="password" autocomplete="current-password" minlength="8" required placeholder="Your password"></label>
         <button class="button button-dark" type="submit">Sign in <span aria-hidden="true">↗</span></button>
@@ -54,7 +58,6 @@
       <p id="account-state-message"></p>
       <p class="application-reference" id="application-reference"></p>
       <button class="button button-outline" type="button" id="account-state-sign-out">Sign out</button>
-      <a class="apply-link" href="rider.html">Return to rider registration <span aria-hidden="true">↗</span></a>
       <p class="app-status" id="account-state-status" role="status" aria-live="polite"></p>
     </section>
 
@@ -113,16 +116,11 @@
     </section>
   </main>
 
-  <footer class="app-footer">
-    <a href="index.html">A&amp;M Logistics website <span aria-hidden="true">↗</span></a>
-    <span>Need a rider account? <a href="rider.html">Apply to ride</a></span>
-  </footer>
-
   <nav class="mobile-nav" aria-label="Rider app navigation" hidden>
-    <button class="active" type="button" data-rider-view="home"><span aria-hidden="true">⌂</span><small>Home</small></button>
-    <button type="button" data-rider-view="deliveries"><span aria-hidden="true">↗</span><small>Deliveries</small></button>
-    <button type="button" data-rider-view="messages"><span aria-hidden="true">□</span><small>Messages</small></button>
-    <button type="button" data-rider-view="earnings"><span aria-hidden="true">₦</span><small>Earnings</small></button>
+    <button class="active" type="button" data-rider-view="home"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-6v-7h-4v7H4a1 1 0 0 1-1-1z"/></svg><small>Home</small></button>
+    <button type="button" data-rider-view="deliveries"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h11v11H3zM14 11h4l3 3v4h-7z"/><circle cx="7.5" cy="18.5" r="1.5"/><circle cx="18" cy="18.5" r="1.5"/></svg><small>Deliveries</small></button>
+    <button type="button" data-rider-view="messages"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v12H8l-4 3zM8 9h8M8 13h5"/></svg><small>Messages</small></button>
+    <button type="button" data-rider-view="earnings"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M8 15h3"/></svg><small>Earnings</small></button>
   </nav>
 </body>
 </html>
