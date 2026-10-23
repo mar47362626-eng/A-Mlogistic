@@ -196,6 +196,13 @@ test('rider portal is configured as a standalone installable app', async () => {
   }
 });
 
+test('customer app removes the Netlify badge and clears the bank loading message', () => {
+  const styles = fs.readFileSync(path.join(__dirname, 'user-app.css'), 'utf8');
+  const script = fs.readFileSync(path.join(__dirname, 'user-app.js'), 'utf8');
+  assert.match(styles, /#nl-badge-frame\s*\{\s*display:\s*none !important;/);
+  assert.match(script, /const \{ bank \} = await api\.request\('\/api\/customer\/payment-account'\);\s*panel\.replaceChildren\(\);/);
+});
+
 test('Netlify proxies API requests through its own origin to keep auth cookies first-party', () => {
   const clientSource = fs.readFileSync(path.join(__dirname, 'api-client.js'), 'utf8');
   const netlifyConfig = fs.readFileSync(path.join(__dirname, 'netlify.toml'), 'utf8');
@@ -241,6 +248,36 @@ test('OpenStreetMap geocoding and OSRM driving distances are cached and converte
   await calculateRoute('Ibadan', 'Abeokuta');
   assert.equal(requests.filter(url => url.includes('nominatim.openstreetmap.org')).length, 3);
   assert.equal(requests.filter(url => url.includes('router.project-osrm.org')).length, 2);
+});
+
+test('route estimates fall back to Photon when Nominatim rate-limits address searches', async () => {
+  const requests = [];
+  const calculateRoute = createDeliveryRouteCalculator(async url => {
+    const requestUrl = String(url);
+    requests.push(requestUrl);
+    if (requestUrl.includes('nominatim.openstreetmap.org')) {
+      return new Response('Rate limited', { status: 429 });
+    }
+    if (requestUrl.includes('photon.komoot.io')) {
+      return new Response(JSON.stringify({
+        features: [{
+          geometry: { coordinates: [3.947, 7.3775] },
+          properties: { name: 'Ibadan', state: 'Oyo', country: 'Nigeria' },
+        }],
+      }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ code: 'Ok', routes: [{ distance: 2475 }] }), { status: 200 });
+  });
+
+  const route = await calculateRoute('Ibadan', 'Ibadan');
+  assert.deepEqual(route, {
+    distanceKm: 2.5,
+    pickupLabel: 'Ibadan, Oyo, Nigeria',
+    deliveryLabel: 'Ibadan, Oyo, Nigeria',
+  });
+  assert.equal(requests.filter(url => url.includes('nominatim.openstreetmap.org')).length, 1);
+  assert.equal(requests.filter(url => url.includes('photon.komoot.io')).length, 1);
+  assert.equal(requests.filter(url => url.includes('router.project-osrm.org')).length, 1);
 });
 
 test('route estimates retry temporary provider failures and log upstream status', async () => {

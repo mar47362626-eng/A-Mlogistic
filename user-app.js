@@ -183,6 +183,7 @@ async function loadBankDetails() {
   panel.append(loading);
   try {
     const { bank } = await api.request('/api/customer/payment-account');
+    panel.replaceChildren();
     [`Bank: ${bank.bankName}`, `Account name: ${bank.accountName}`, `Account number: ${bank.accountNumber}`]
       .forEach(line => {
         const detail = document.createElement('p');

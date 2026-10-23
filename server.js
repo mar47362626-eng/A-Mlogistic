@@ -313,7 +313,7 @@ function createDeliveryRouteCalculator(fetchImpl = globalThis.fetch) {
     return Math.max(rateLimited ? 10_000 : 1000 * (attempt + 1), providerDelay, 1000);
   }
 
-  async function fetchRouteProvider(url, options, providerName) {
+  async function fetchRouteProvider(url, options, providerName, { retryRateLimit = true } = {}) {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       let response;
       try {
@@ -334,7 +334,7 @@ function createDeliveryRouteCalculator(fetchImpl = globalThis.fetch) {
       if (response.ok) return response;
 
       console.error(`${providerName} returned HTTP ${response.status}.`);
-      if (attempt === 0 && (response.status === 429 || response.status >= 500)) {
+      if (attempt === 0 && ((response.status === 429 && retryRateLimit) || response.status >= 500)) {
         await new Promise(resolve => setTimeout(resolve, retryDelayMs(response, attempt, response.status === 429)));
         continue;
       }
@@ -350,52 +350,81 @@ function createDeliveryRouteCalculator(fetchImpl = globalThis.fetch) {
       if (cached && cached.expiresAt > Date.now()) return cached.location;
       if (cached) geocodeCache.delete(cacheKey);
 
-      const url = new URL('https://nominatim.openstreetmap.org/search');
-      url.search = new URLSearchParams({
-        q: `${address}, Nigeria`,
-        countrycodes: 'ng',
-        format: 'jsonv2',
-        limit: '1',
-      });
-      const waitMs = Math.max(0, 1100 - (Date.now() - lastGeocodingRequestAt));
-      if (waitMs) await new Promise(resolve => setTimeout(resolve, waitMs));
-      let response = await fetchRouteProvider(url, {
-        headers: { 'User-Agent': 'A&M Logistics delivery distance calculator (https://a-mlogistic.onrender.com)' },
-      }, 'OpenStreetMap Nominatim');
-      lastGeocodingRequestAt = Date.now();
-      if (!response) {
-        throw requestError('The address search service is unavailable right now. Please try again shortly.', 502);
-      }
-      if (!response.ok) {
-        if (response.status === 429) {
-          throw requestError('Address lookup is being rate-limited. Please wait a minute before trying the estimate again.', 503);
+      const providers = [
+        {
+          name: 'OpenStreetMap Nominatim',
+          url: new URL('https://nominatim.openstreetmap.org/search'),
+          parse: result => result?.[0] && ({
+            latitude: Number(result[0].lat),
+            longitude: Number(result[0].lon),
+            label: result[0].display_name,
+          }),
+        },
+        {
+          name: 'Photon geocoding service',
+          url: new URL('https://photon.komoot.io/api/'),
+          parse: result => {
+            const feature = result?.features?.[0];
+            if (!feature) return null;
+            const [longitude, latitude] = feature.geometry?.coordinates || [];
+            const properties = feature.properties || {};
+            return {
+              latitude: Number(latitude),
+              longitude: Number(longitude),
+              label: properties.name
+                ? [properties.name, properties.city, properties.state, properties.country].filter(Boolean).join(', ')
+                : address,
+            };
+          },
+        },
+      ];
+      let lastFailureStatus = 503;
+      for (const [index, provider] of providers.entries()) {
+        provider.url.search = provider.name === 'OpenStreetMap Nominatim'
+          ? new URLSearchParams({
+            q: `${address}, Nigeria`,
+            countrycodes: 'ng',
+            format: 'jsonv2',
+            limit: '1',
+          }).toString()
+          : new URLSearchParams({ q: `${address}, Nigeria`, lang: 'en', limit: '1' }).toString();
+        if (index === 0) {
+          const waitMs = Math.max(0, 1100 - (Date.now() - lastGeocodingRequestAt));
+          if (waitMs) await new Promise(resolve => setTimeout(resolve, waitMs));
         }
-        throw requestError('The address search service is temporarily unavailable. Please try again shortly.', 502);
+        const response = await fetchRouteProvider(provider.url, {
+          headers: { 'User-Agent': 'A&M Logistics delivery distance calculator (https://a-mlogistic.onrender.com)' },
+        }, provider.name, { retryRateLimit: false });
+        if (index === 0) lastGeocodingRequestAt = Date.now();
+        if (!response || !response.ok) {
+          lastFailureStatus = response?.status === 429 || !response || response.status >= 500 ? 503 : 502;
+          continue;
+        }
+        let result;
+        try {
+          result = await response.json();
+        } catch {
+          lastFailureStatus = 502;
+          continue;
+        }
+        const location = provider.parse(result);
+        if (!location || !Number.isFinite(location.latitude) || location.latitude < -90 || location.latitude > 90
+          || !Number.isFinite(location.longitude) || location.longitude < -180 || location.longitude > 180) {
+          lastFailureStatus = 422;
+          continue;
+        }
+        location.label = String(location.label || address);
+        for (const [key, entry] of geocodeCache) {
+          if (entry.expiresAt <= Date.now()) geocodeCache.delete(key);
+        }
+        if (geocodeCache.size >= 1000) geocodeCache.delete(geocodeCache.keys().next().value);
+        geocodeCache.set(cacheKey, { location, expiresAt: Date.now() + 24 * 60 * 60 * 1000 });
+        return location;
       }
-      let matches;
-      try {
-        matches = await response.json();
-      } catch {
-        throw requestError('The address search service returned an invalid response. Please try again later.', 502);
-      }
-      const match = matches[0];
-      const latitude = Number(match?.lat);
-      const longitude = Number(match?.lon);
-      if (!match || !Number.isFinite(latitude) || latitude < -90 || latitude > 90
-        || !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
+      if (lastFailureStatus === 422) {
         throw requestError('We could not find one of those addresses. Enter a more complete street, city, and state address.', 422);
       }
-      const location = {
-        latitude,
-        longitude,
-        label: String(match.display_name || address),
-      };
-      for (const [key, entry] of geocodeCache) {
-        if (entry.expiresAt <= Date.now()) geocodeCache.delete(key);
-      }
-      if (geocodeCache.size >= 1000) geocodeCache.delete(geocodeCache.keys().next().value);
-      geocodeCache.set(cacheKey, { location, expiresAt: Date.now() + 24 * 60 * 60 * 1000 });
-      return location;
+      throw requestError('Address lookup services are temporarily unavailable. Please try again shortly.', lastFailureStatus);
     };
 
     const result = geocodingQueue.then(search, search);
