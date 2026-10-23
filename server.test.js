@@ -179,6 +179,7 @@ test('rider portal is configured as a standalone installable app', async () => {
   assert.equal(manifest.name, 'A&M Rider');
   assert.equal(manifest.display, 'standalone');
   assert.equal(manifest.start_url, '/rider-app');
+  assert.equal(manifest.scope, '/rider-app');
   assert.match(styles, /#nl-badge-frame\s*\{\s*display:\s*none !important;/);
   assert.match(styles, /env\(safe-area-inset-bottom\)/);
   for (const size of [192, 512]) {

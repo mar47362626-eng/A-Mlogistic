@@ -4,7 +4,7 @@
   "short_name": "A&M Rider",
   "description": "Manage A&M Logistics rider deliveries, messages, handovers, and earnings.",
   "start_url": "/rider-app",
-  "scope": "/",
+  "scope": "/rider-app",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#f4f5f1",
