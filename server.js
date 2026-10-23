@@ -530,6 +530,9 @@ function payoutWeek(value) {
     throw requestError('Payouts can only be requested for a week that has started.', 409);
   }
   const endAt = startAt + 7 * 24 * 60 * 60 * 1000;
+  if (endAt > Date.now()) {
+    throw requestError('Payouts can only be requested after the selected week is complete.', 409);
+  }
   return {
     weekStart: value,
     weekEnd: new Date(endAt - 1).toISOString().slice(0, 10),

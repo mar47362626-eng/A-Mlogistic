@@ -315,10 +315,18 @@ function payoutWeekOptions() {
   const mondayOffset = (today.getUTCDay() + 6) % 7;
   const thisWeekMonday = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
     - mondayOffset * 24 * 60 * 60 * 1000;
-  return Array.from({ length: 12 }, (_, index) => {
-    const start = new Date(thisWeekMonday - (index + 1) * 7 * 24 * 60 * 60 * 1000);
-    return start.toISOString().slice(0, 10);
-  });
+  const lastDayOf2029 = Date.UTC(2029, 11, 31);
+  const latestFullWeekMonday = lastDayOf2029 - 6 * 24 * 60 * 60 * 1000;
+  const latestWeekStart = Math.min(
+    thisWeekMonday,
+    latestFullWeekMonday - ((new Date(latestFullWeekMonday).getUTCDay() + 6) % 7) * 24 * 60 * 60 * 1000,
+  );
+  const earliestWeekStart = thisWeekMonday - 12 * 7 * 24 * 60 * 60 * 1000;
+  const weeks = [];
+  for (let start = latestWeekStart; start >= earliestWeekStart; start -= 7 * 24 * 60 * 60 * 1000) {
+    weeks.push(new Date(start).toISOString().slice(0, 10));
+  }
+  return weeks;
 }
 
 function populatePayoutWeeks() {
@@ -331,6 +339,10 @@ function populatePayoutWeeks() {
     option.textContent = `${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(`${start}T00:00:00.000Z`))} – ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'UTC' }).format(end)}`;
     select.append(option);
   });
+  const today = new Date();
+  const thisWeekMonday = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
+    - ((today.getUTCDay() + 6) % 7) * 24 * 60 * 60 * 1000;
+  select.value = new Date(thisWeekMonday - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
 function renderPayoutSummary() {
@@ -338,6 +350,22 @@ function renderPayoutSummary() {
   if (!selectedWeek) return;
   const start = Date.parse(`${selectedWeek}T00:00:00.000Z`);
   const end = start + 7 * 24 * 60 * 60 * 1000;
+  const today = new Date();
+  const thisWeekMonday = Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
+    - ((today.getUTCDay() + 6) % 7) * 24 * 60 * 60 * 1000;
+  if (start >= thisWeekMonday) {
+    document.querySelector('#payout-summary').textContent = start === thisWeekMonday
+      ? 'This week is still in progress. Earnings and payout requests will be available after it is completed.'
+      : 'This week has not started yet. Earnings and payout requests will be available after it is completed.';
+    const rows = document.querySelector('#payout-deliveries');
+    rows.replaceChildren();
+    const notice = document.createElement('p');
+    notice.textContent = 'Completed deliveries will appear here after the week ends.';
+    rows.append(notice);
+    document.querySelector('#payout-history').replaceChildren();
+    document.querySelector('#request-payout').disabled = true;
+    return;
+  }
   const completed = riderOrders.filter(order => order.status === 'Delivered'
     && order.deliveredAt >= start
     && order.deliveredAt < end

@@ -203,6 +203,18 @@ test('customer app removes the Netlify badge and clears the bank loading message
   assert.match(script, /const \{ bank \} = await api\.request\('\/api\/customer\/payment-account'\);\s*panel\.replaceChildren\(\);/);
 });
 
+test('rider earnings weeks extend through 2029 and keep incomplete weeks unavailable', () => {
+  for (const filename of ['rider.js', 'rider-app.js']) {
+    const script = fs.readFileSync(path.join(__dirname, filename), 'utf8');
+    assert.match(script, /Date\.UTC\(2029, 11, 31\)/);
+    assert.match(script, /const latestWeekStart = Math\.min/);
+    assert.match(script, /start(?:At)? >= thisWeekMonday/);
+    assert.match(script, /requestButton\.disabled = true|querySelector\('#request-payout'\)\.disabled = true/);
+    assert.match(script, /Payouts will be available after it is completed|payout requests will be available after it is completed/i);
+    assert.match(script, /thisWeekMonday - 7 \* 24 \* 60 \* 60 \* 1000/);
+  }
+});
+
 test('Netlify proxies API requests through its own origin to keep auth cookies first-party', () => {
   const clientSource = fs.readFileSync(path.join(__dirname, 'api-client.js'), 'utf8');
   const netlifyConfig = fs.readFileSync(path.join(__dirname, 'netlify.toml'), 'utf8');
@@ -1063,6 +1075,14 @@ test('customer and rider workflows share orders, assignment, and notifications',
   currentUtcMonday.setUTCDate(currentUtcMonday.getUTCDate() - ((currentUtcMonday.getUTCDay() + 6) % 7));
   const previousWeekStart = new Date(currentUtcMonday.getTime() - 7 * 24 * 60 * 60 * 1000);
   const previousWeekLabel = previousWeekStart.toISOString().slice(0, 10);
+  const currentWeekLabel = currentUtcMonday.toISOString().slice(0, 10);
+  const incompleteWeekPayout = await request('/api/rider/payouts', {
+    method: 'POST',
+    cookie: riderLogin.cookie,
+    body: { weekStart: currentWeekLabel },
+  });
+  assert.equal(incompleteWeekPayout.response.status, 409);
+  assert.match(incompleteWeekPayout.result.error, /after the selected week is complete/i);
   await database.update('orders', record => record.id === deliveredOrder.id, record => ({
     ...record,
     delivered_at: previousWeekStart.getTime() + 2 * 24 * 60 * 60 * 1000,
