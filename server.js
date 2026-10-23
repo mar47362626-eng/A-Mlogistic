@@ -602,6 +602,7 @@ function authenticate(database, role, { allowAnonymous = false } = {}) {
 
     let roleMismatch = false;
     let expiredSession = false;
+    const authenticatedSessions = [];
     for (const { name, token } of credentials) {
       const tokenHash = hashToken(token);
       const session = await database.find('sessions', record => record.token_hash === tokenHash);
@@ -617,7 +618,17 @@ function authenticate(database, role, { allowAnonymous = false } = {}) {
         roleMismatch = true;
         continue;
       }
-      request.auth = { role: session.role, principalId: session.principal_id };
+      const authenticatedSession = { role: session.role, principalId: session.principal_id };
+      if (role) {
+        request.auth = authenticatedSession;
+        return next();
+      }
+      authenticatedSessions.push(authenticatedSession);
+    }
+
+    if (authenticatedSessions.length) {
+      request.authSessions = authenticatedSessions;
+      request.auth = authenticatedSessions[0];
       return next();
     }
 
@@ -1552,9 +1563,12 @@ function createApp(database, {
   app.get('/api/orders/:id/photo', requireAdminRole, async (request, response) => {
     const order = await database.findById('orders', request.params.id);
     if (!order) return response.status(404).json({ error: 'Order not found.' });
-    const isOwner = request.auth.role === 'customer' && order.user_id === request.auth.principalId;
-    const isAssignedRider = request.auth.role === 'rider' && order.rider_id === request.auth.principalId;
-    if (request.auth.role !== 'admin' && !isOwner && !isAssignedRider) {
+    const canViewPhoto = (request.authSessions || [request.auth]).some(session => (
+      session.role === 'admin'
+      || (session.role === 'customer' && order.user_id === session.principalId)
+      || (session.role === 'rider' && order.rider_id === session.principalId)
+    ));
+    if (!canViewPhoto) {
       return response.status(403).json({ error: 'You do not have permission to view this photo.' });
     }
     response.setHeader('Content-Type', order.photo_type);

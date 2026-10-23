@@ -953,6 +953,19 @@ test('customer and rider workflows share orders, assignment, and notifications',
     Buffer.from(await riderPhoto.arrayBuffer()).subarray(0, 8),
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
   );
+  const unrelatedCustomerLogin = await request('/api/auth/login', {
+    method: 'POST',
+    body: { email: 'email-outage-customer@example.com', password: 'email-outage-password-123' },
+  });
+  assert.equal(unrelatedCustomerLogin.response.status, 200);
+  const riderPhotoWithUnrelatedCustomerSession = await fetch(`${baseUrl}/api/orders/${order.result.order.id}/photo`, {
+    headers: { Cookie: `${unrelatedCustomerLogin.cookie}; ${riderLogin.cookie}` },
+  });
+  assert.equal(riderPhotoWithUnrelatedCustomerSession.status, 200);
+  const photoWithOnlyUnrelatedCustomerSession = await fetch(`${baseUrl}/api/orders/${order.result.order.id}/photo`, {
+    headers: { Cookie: unrelatedCustomerLogin.cookie },
+  });
+  assert.equal(photoWithOnlyUnrelatedCustomerSession.status, 403);
   const pickupCodeSent = await request(`/api/rider/orders/${order.result.order.id}/handoff-code`, {
     method: 'POST',
     cookie: riderLogin.cookie,
