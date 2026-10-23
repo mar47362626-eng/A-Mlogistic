@@ -31,7 +31,16 @@ window.api = {
       },
     });
     if (response.status === 204) return null;
-    const result = await response.json();
+    let result;
+    try {
+      result = await response.json();
+    } catch {
+      const error = new Error(
+        `The service returned an unexpected response (HTTP ${response.status}). Please try again. If this continues, contact A&M Logistics.`,
+      );
+      error.status = response.status;
+      throw error;
+    }
     if (!response.ok) {
       const error = new Error(result.error || 'The request could not be completed.');
       error.status = response.status;
